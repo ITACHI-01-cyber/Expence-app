@@ -1,0 +1,6 @@
+{
+  "name": "Expence Rack",
+  "description": "Expense, wallet, and budget tracker replica of Expence Rack",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
