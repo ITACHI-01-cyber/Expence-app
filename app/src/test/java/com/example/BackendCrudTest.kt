@@ -59,7 +59,7 @@ class BackendCrudTest {
             Response.error<ApiResponse<com.example.network.UserProfile>>(403, ResponseBody.create(null, "Forbidden"))
 
         // GET Transactions: returns empty list by default
-        override suspend fun getTransactions(): Response<ApiResponse<List<ServerTransaction>>> =
+        override suspend fun getTransactions(month: Int?, year: Int?): Response<ApiResponse<List<ServerTransaction>>> =
             Response.success(ApiResponse(success = true, data = emptyList()))
 
         // POST Add Transaction: simulates successful remote persistence

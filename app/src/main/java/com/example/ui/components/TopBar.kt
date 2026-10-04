@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -106,39 +103,11 @@ fun TopBar(
                 }
             }
 
-            // Right Actions: Quick Add and Avatar Bubble with Name (Refresh icon removed as requested)
+            // Right Actions: Avatar Bubble with Name
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Add Transaction button
-                Surface(
-                    onClick = onAddTransactionClick,
-                    shape = RoundedCornerShape(14.dp),
-                    color = colors.ctaButton,
-                    border = BorderStroke(1.dp, colors.surfaceBorder),
-                    modifier = Modifier.testTag("top_add_transaction_btn")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add",
-                            tint = colors.onCtaButton,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Add",
-                            color = colors.onCtaButton,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-
                 // Profile Avatar with Name Pill
                 Surface(
                     onClick = onProfileClick,

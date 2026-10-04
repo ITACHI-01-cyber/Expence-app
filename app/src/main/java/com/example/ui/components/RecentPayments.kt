@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.TransactionEntity
 import com.example.model.WalletEntity
+import com.example.network.formatDisplayDate
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
 
@@ -236,8 +237,14 @@ fun TransactionItemRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(top = 2.dp)
                 ) {
+                    val displayDate = formatDisplayDate(transaction.date)
+                    val descText = when {
+                        transaction.description.isNotBlank() && displayDate.isNotBlank() -> "${transaction.description} • $displayDate"
+                        transaction.description.isNotBlank() -> transaction.description
+                        else -> displayDate.ifBlank { "Transaction" }
+                    }
                     Text(
-                        text = transaction.description.ifBlank { transaction.date },
+                        text = descText,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

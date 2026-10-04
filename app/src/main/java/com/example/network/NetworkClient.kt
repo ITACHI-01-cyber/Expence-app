@@ -51,7 +51,10 @@ interface BackendApiService {
 
     // ── Transactions Endpoints (Real backend route: /api/transactions) ──
     @GET("api/transactions")
-    suspend fun getTransactions(): Response<ApiResponse<List<ServerTransaction>>>
+    suspend fun getTransactions(
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int? = null
+    ): Response<ApiResponse<List<ServerTransaction>>>
 
     @POST("api/transactions")
     suspend fun addTransaction(

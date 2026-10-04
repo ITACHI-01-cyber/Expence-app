@@ -56,6 +56,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.WalletEntity
+import com.example.network.formatToIsoLocalDateTime
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
 import java.text.SimpleDateFormat
@@ -332,8 +333,11 @@ fun AddEditTransactionDialog(
                         onClick = {
                             val amt = amountStr.toDoubleOrNull() ?: 0.0
                             if (amt > 0) {
-                                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                                val dStr = initialTransaction?.date ?: dateFormat.format(Date())
+                                val dStr = if (initialTransaction != null) {
+                                    formatToIsoLocalDateTime(initialTransaction.date, initialTransaction.timestamp)
+                                } else {
+                                    formatToIsoLocalDateTime(null)
+                                }
                                 onSave(type, amt, category, description, dStr, isRecurring, selectedWalletId)
                                 onDismiss()
                             }

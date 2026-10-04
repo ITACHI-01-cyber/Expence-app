@@ -77,6 +77,35 @@ data class ServerTransaction(
     @Json(name = "paymentMethod") val paymentMethod: String? = null
 )
 
+fun formatToIsoLocalDateTime(dateStr: String?, timestamp: Long = System.currentTimeMillis()): String {
+    if (dateStr != null && dateStr.contains("T") && dateStr.length >= 19) {
+        return dateStr.substring(0, 19)
+    }
+    return try {
+        val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        if (dateStr.isNullOrBlank()) {
+            isoFormat.format(java.util.Date(timestamp))
+        } else if (dateStr.contains(" ") && dateStr.length >= 16) {
+            val spaceFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+            val d = spaceFormat.parse(dateStr)
+            isoFormat.format(d ?: java.util.Date(timestamp))
+        } else if (dateStr.length == 10 && dateStr.contains("-")) {
+            val dayFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            val d = dayFormat.parse(dateStr)
+            isoFormat.format(d ?: java.util.Date(timestamp))
+        } else {
+            isoFormat.format(java.util.Date(timestamp))
+        }
+    } catch (e: Exception) {
+        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).format(java.util.Date(timestamp))
+    }
+}
+
+fun formatDisplayDate(dateStr: String?): String {
+    if (dateStr.isNullOrBlank()) return ""
+    return dateStr.replace("T", " ").take(16)
+}
+
 @JsonClass(generateAdapter = true)
 data class ServerWallet(
     @Json(name = "id") val id: String? = null,

@@ -15,6 +15,8 @@ import com.example.network.ServerGoal
 import com.example.network.ServerTransaction
 import com.example.network.ServerWallet
 import com.example.network.TopUpWalletRequest
+import com.example.network.formatToIsoLocalDateTime
+import com.example.network.formatDisplayDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -58,83 +60,128 @@ class ExpenseRepository(
 
     suspend fun syncTransactionsFromServer(): Result<List<TransactionEntity>> = withContext(Dispatchers.IO) {
         try {
-            // Step 1: Push any local transactions to the server first
+            // Step 1: Push pending local transactions to the server
             val localList = dao.getAllTransactionsList()
             for (localTx in localList) {
-                try {
-                    val addResp = apiService.addTransaction(
-                        ServerTransaction(
-                            id = localTx.id,
-                            title = localTx.description,
-                            description = localTx.description,
-                            amount = localTx.amount,
-                            category = localTx.category,
-                            date = localTx.date,
-                            type = localTx.type.lowercase(),
-                            isRecurring = localTx.isRecurring,
-                            walletId = localTx.walletId.ifBlank { null }
+                val isLocalOnly = localTx.id.contains("-") || localTx.id.startsWith("local_") || localTx.id.startsWith("test_")
+                if (isLocalOnly) {
+                    try {
+                        val validWalletId = if (localTx.walletId.isNotBlank() && !localTx.walletId.startsWith("local_")) {
+                            localTx.walletId
+                        } else null
+                        val isoDate = formatToIsoLocalDateTime(localTx.date, localTx.timestamp)
+
+                        val addResp = apiService.addTransaction(
+                            ServerTransaction(
+                                id = null,
+                                title = localTx.description.ifBlank { localTx.category },
+                                description = localTx.description.ifBlank { localTx.category },
+                                amount = localTx.amount,
+                                category = localTx.category,
+                                date = isoDate,
+                                type = localTx.type.lowercase(),
+                                isRecurring = localTx.isRecurring,
+                                walletId = validWalletId
+                            )
                         )
-                    )
-                    if (addResp.isSuccessful && addResp.body()?.data != null) {
-                        val serverTx = addResp.body()!!.data!!
-                        val serverId = serverTx.mongoId ?: serverTx.id
-                        if (!serverId.isNullOrBlank() && serverId != localTx.id) {
-                            dao.deleteTransactionById(localTx.id)
-                            dao.insertTransaction(localTx.copy(id = serverId))
+                        if (addResp.isSuccessful && addResp.body()?.data != null) {
+                            val serverTx = addResp.body()!!.data!!
+                            val serverId = serverTx.mongoId ?: serverTx.id
+                            if (!serverId.isNullOrBlank() && serverId != localTx.id) {
+                                dao.deleteTransactionById(localTx.id)
+                                dao.insertTransaction(localTx.copy(id = serverId, date = isoDate))
+                            }
                         }
+                    } catch (ignored: Exception) {
+                        // Local copy safely preserved
                     }
-                } catch (ignored: Exception) {
-                    // Local copy safely preserved
                 }
             }
 
-            // Step 2: Fetch transactions from server
-            val response = apiService.getTransactions()
-            if (response.isSuccessful) {
-                val serverList = response.body()?.data ?: emptyList()
-                val displayDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                val isoDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-                val simpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                val nowTime = System.currentTimeMillis()
+            // Step 2: Fetch transactions from server across current and recent months
+            val nowCal = Calendar.getInstance()
+            val currentMonth = nowCal.get(Calendar.MONTH) + 1
+            val currentYear = nowCal.get(Calendar.YEAR)
 
-                val mappedEntities = serverList.mapIndexed { index, item ->
-                    val txId = item.mongoId ?: item.id ?: UUID.randomUUID().toString()
-                    val parsedTimestamp = try {
-                        item.date?.let { raw ->
-                            val clean = if (raw.length >= 19) raw.substring(0, 19) else raw
-                            isoDateFormat.parse(clean)?.time
-                                ?: simpleDateFormat.parse(raw.take(10))?.time
-                        } ?: (nowTime - (index * 60000L))
-                    } catch (e: Exception) {
-                        nowTime - (index * 60000L)
-                    }
+            val serverList = mutableListOf<ServerTransaction>()
 
-                    val dateStr = item.date?.take(10) ?: displayDateFormat.format(Date(parsedTimestamp))
-                    TransactionEntity(
-                        id = txId,
-                        type = item.type.ifBlank { "expense" }.lowercase(),
-                        amount = item.amount,
-                        category = item.category.ifBlank { "Other" },
-                        description = item.title ?: item.description ?: "Transaction",
-                        date = dateStr,
-                        timestamp = parsedTimestamp,
-                        isRecurring = item.isRecurring,
-                        walletId = item.walletId ?: ""
-                    )
+            // Default route (typically current month)
+            try {
+                val respDefault = apiService.getTransactions()
+                if (respDefault.isSuccessful) {
+                    respDefault.body()?.data?.let { serverList.addAll(it) }
+                }
+            } catch (ignored: Exception) {}
+
+            // Current month specifically
+            try {
+                val respCurr = apiService.getTransactions(currentMonth, currentYear)
+                if (respCurr.isSuccessful) {
+                    respCurr.body()?.data?.let { serverList.addAll(it) }
+                }
+            } catch (ignored: Exception) {}
+
+            // Previous month (e.g. September if October) to retrieve all existing website records
+            val prevCal = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
+            val prevMonth = prevCal.get(Calendar.MONTH) + 1
+            val prevYear = prevCal.get(Calendar.YEAR)
+            try {
+                val respPrev = apiService.getTransactions(prevMonth, prevYear)
+                if (respPrev.isSuccessful) {
+                    respPrev.body()?.data?.let { serverList.addAll(it) }
+                }
+            } catch (ignored: Exception) {}
+
+            // Previous 2 months
+            val prev2Cal = Calendar.getInstance().apply { add(Calendar.MONTH, -2) }
+            val prev2Month = prev2Cal.get(Calendar.MONTH) + 1
+            val prev2Year = prev2Cal.get(Calendar.YEAR)
+            try {
+                val respPrev2 = apiService.getTransactions(prev2Month, prev2Year)
+                if (respPrev2.isSuccessful) {
+                    respPrev2.body()?.data?.let { serverList.addAll(it) }
+                }
+            } catch (ignored: Exception) {}
+
+            // Deduplicate items by server ID
+            val uniqueServerList = serverList.distinctBy { it.mongoId ?: it.id }
+
+            val displayDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val isoDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+            val simpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val nowTime = System.currentTimeMillis()
+
+            val mappedEntities = uniqueServerList.mapIndexed { index, item ->
+                val txId = item.mongoId ?: item.id ?: UUID.randomUUID().toString()
+                val parsedTimestamp = try {
+                    item.date?.let { raw ->
+                        val clean = if (raw.length >= 19) raw.substring(0, 19) else raw
+                        isoDateFormat.parse(clean)?.time
+                            ?: simpleDateFormat.parse(raw.take(10))?.time
+                    } ?: (nowTime - (index * 60000L))
+                } catch (e: Exception) {
+                    nowTime - (index * 60000L)
                 }
 
-                // CRITICAL FIX: NEVER call dao.clearTransactions()!
-                // Using insertTransactions (OnConflictStrategy.REPLACE) merges server records
-                // while preserving newly created local transactions.
-                if (mappedEntities.isNotEmpty()) {
-                    dao.insertTransactions(mappedEntities)
-                }
-                val allTransactions = dao.getAllTransactionsList()
-                Result.success(allTransactions)
-            } else {
-                val err = response.errorBody()?.string() ?: "Failed to fetch transactions: ${response.code()}"
-                Result.failure(Exception(err))
+                val dateStr = item.date?.replace("T", " ")?.take(16) ?: displayDateFormat.format(Date(parsedTimestamp))
+                TransactionEntity(
+                    id = txId,
+                    type = item.type.ifBlank { "expense" }.lowercase(),
+                    amount = item.amount,
+                    category = item.category.ifBlank { "Other" },
+                    description = item.title ?: item.description ?: "Transaction",
+                    date = dateStr,
+                    timestamp = parsedTimestamp,
+                    isRecurring = item.isRecurring,
+                    walletId = item.walletId ?: ""
+                )
             }
+
+            if (mappedEntities.isNotEmpty()) {
+                dao.insertTransactions(mappedEntities)
+            }
+            val allTransactions = dao.getAllTransactionsList()
+            Result.success(allTransactions)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -309,33 +356,41 @@ class ExpenseRepository(
     // ─────────────────────────────────────────────────────────────────────────
 
     suspend fun addTransaction(transaction: TransactionEntity) = withContext(Dispatchers.IO) {
-        dao.insertTransaction(transaction)
-        if (transaction.walletId.isNotBlank()) {
-            val delta = if (transaction.type == "expense") -transaction.amount else transaction.amount
-            dao.addMoneyToWallet(transaction.walletId, delta)
+        val isoDate = formatToIsoLocalDateTime(transaction.date, transaction.timestamp)
+        val preparedTx = transaction.copy(date = isoDate)
+        dao.insertTransaction(preparedTx)
+
+        if (preparedTx.walletId.isNotBlank()) {
+            val delta = if (preparedTx.type == "expense") -preparedTx.amount else preparedTx.amount
+            dao.addMoneyToWallet(preparedTx.walletId, delta)
         }
 
         try {
+            val validWalletId = if (preparedTx.walletId.isNotBlank() && !preparedTx.walletId.startsWith("local_")) {
+                preparedTx.walletId
+            } else null
+
             val response = apiService.addTransaction(
                 ServerTransaction(
-                    id = transaction.id,
-                    title = transaction.description,
-                    description = transaction.description,
-                    amount = transaction.amount,
-                    category = transaction.category,
-                    date = transaction.date,
-                    type = transaction.type,
-                    isRecurring = transaction.isRecurring,
-                    walletId = transaction.walletId.ifBlank { null }
+                    id = null,
+                    title = preparedTx.description.ifBlank { preparedTx.category },
+                    description = preparedTx.description.ifBlank { preparedTx.category },
+                    amount = preparedTx.amount,
+                    category = preparedTx.category,
+                    date = isoDate,
+                    type = preparedTx.type.lowercase(),
+                    isRecurring = preparedTx.isRecurring,
+                    walletId = validWalletId
                 )
             )
             if (response.isSuccessful && response.body()?.data != null) {
                 val serverTx = response.body()!!.data!!
                 val serverId = serverTx.mongoId ?: serverTx.id
-                if (!serverId.isNullOrBlank() && serverId != transaction.id) {
-                    dao.deleteTransactionById(transaction.id)
-                    dao.insertTransaction(transaction.copy(id = serverId))
+                if (!serverId.isNullOrBlank() && serverId != preparedTx.id) {
+                    dao.deleteTransactionById(preparedTx.id)
+                    dao.insertTransaction(preparedTx.copy(id = serverId, date = isoDate))
                 }
+                syncWalletsFromServer()
             }
         } catch (e: Exception) {
             // Optimistic update retained locally
@@ -343,32 +398,42 @@ class ExpenseRepository(
     }
 
     suspend fun updateTransaction(newTx: TransactionEntity) = withContext(Dispatchers.IO) {
-        val oldTx = dao.getTransactionById(newTx.id)
+        val isoDate = formatToIsoLocalDateTime(newTx.date, newTx.timestamp)
+        val preparedTx = newTx.copy(date = isoDate)
+
+        val oldTx = dao.getTransactionById(preparedTx.id)
         if (oldTx != null && oldTx.walletId.isNotBlank()) {
             val revertDelta = if (oldTx.type == "expense") oldTx.amount else -oldTx.amount
             dao.addMoneyToWallet(oldTx.walletId, revertDelta)
         }
-        dao.updateTransaction(newTx)
-        if (newTx.walletId.isNotBlank()) {
-            val applyDelta = if (newTx.type == "expense") -newTx.amount else newTx.amount
-            dao.addMoneyToWallet(newTx.walletId, applyDelta)
+        dao.updateTransaction(preparedTx)
+        if (preparedTx.walletId.isNotBlank()) {
+            val applyDelta = if (preparedTx.type == "expense") -preparedTx.amount else preparedTx.amount
+            dao.addMoneyToWallet(preparedTx.walletId, applyDelta)
         }
 
         try {
-            apiService.updateTransaction(
-                id = newTx.id,
+            val validWalletId = if (preparedTx.walletId.isNotBlank() && !preparedTx.walletId.startsWith("local_")) {
+                preparedTx.walletId
+            } else null
+
+            val response = apiService.updateTransaction(
+                id = preparedTx.id,
                 transaction = ServerTransaction(
-                    id = newTx.id,
-                    title = newTx.description,
-                    description = newTx.description,
-                    amount = newTx.amount,
-                    category = newTx.category,
-                    date = newTx.date,
-                    type = newTx.type,
-                    isRecurring = newTx.isRecurring,
-                    walletId = newTx.walletId.ifBlank { null }
+                    id = preparedTx.id,
+                    title = preparedTx.description.ifBlank { preparedTx.category },
+                    description = preparedTx.description.ifBlank { preparedTx.category },
+                    amount = preparedTx.amount,
+                    category = preparedTx.category,
+                    date = isoDate,
+                    type = preparedTx.type.lowercase(),
+                    isRecurring = preparedTx.isRecurring,
+                    walletId = validWalletId
                 )
             )
+            if (response.isSuccessful) {
+                syncWalletsFromServer()
+            }
         } catch (e: Exception) {
             // Offline resiliency
         }
@@ -385,7 +450,10 @@ class ExpenseRepository(
         }
 
         try {
-            apiService.deleteTransaction(transactionId)
+            val resp = apiService.deleteTransaction(transactionId)
+            if (resp.isSuccessful) {
+                syncWalletsFromServer()
+            }
         } catch (e: Exception) {
             // Local delete succeeded
         }
@@ -553,23 +621,27 @@ class ExpenseRepository(
         }
 
         // ── Case 3: POST /api/transactions (Create Transaction) ──
-        val testTxId = "test_crud_" + System.currentTimeMillis()
+        val nowIso = formatToIsoLocalDateTime(null)
         val t2 = System.currentTimeMillis()
         val dummyTx = ServerTransaction(
-            id = testTxId,
+            id = null,
             title = "Diagnostic Test Transaction",
             description = "Diagnostic Test Transaction",
             amount = 10.0,
             category = "Other",
-            date = "2026-09-27",
+            date = nowIso,
             type = "expense",
             isRecurring = false,
             walletId = null
         )
+        var createdServerId: String? = null
         try {
             val resp = apiService.addTransaction(dummyTx)
             val latency = System.currentTimeMillis() - t2
             val code = resp.code()
+            val serverTx = resp.body()?.data
+            createdServerId = serverTx?.mongoId ?: serverTx?.id
+            val isOk = resp.isSuccessful && !createdServerId.isNullOrBlank()
             results.add(
                 ApiTestCaseResult(
                     testName = "3. Create Transaction (POST)",
@@ -577,11 +649,11 @@ class ExpenseRepository(
                     endpoint = "/api/transactions",
                     statusCode = code,
                     latencyMs = latency,
-                    isSuccess = resp.isSuccessful || code == 403,
+                    isSuccess = isOk || code == 403,
                     detailMessage = when {
-                        resp.isSuccessful -> "Created on server; ID: ${resp.body()?.data?.mongoId ?: testTxId}"
+                        resp.isSuccessful -> "Created on server; ID: ${createdServerId ?: "generated"}"
                         code == 403 -> "HTTP 403: Endpoint verified; transaction preserved in Room local storage"
-                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(60) ?: "Server error"}"
+                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(80) ?: "Server error"}"
                     }
                 )
             )
@@ -600,17 +672,23 @@ class ExpenseRepository(
         }
 
         // ── Case 4: PUT /api/transactions/{id} (Update Transaction) ──
+        val targetId = createdServerId ?: ("test_crud_" + System.currentTimeMillis())
         val t3 = System.currentTimeMillis()
         try {
-            val updatedDummy = dummyTx.copy(amount = 25.0, description = "Updated Diagnostic Test")
-            val resp = apiService.updateTransaction(testTxId, updatedDummy)
+            val updatedDummy = dummyTx.copy(
+                id = targetId,
+                amount = 25.0,
+                description = "Updated Diagnostic Test",
+                date = formatToIsoLocalDateTime(null)
+            )
+            val resp = apiService.updateTransaction(targetId, updatedDummy)
             val latency = System.currentTimeMillis() - t3
             val code = resp.code()
             results.add(
                 ApiTestCaseResult(
                     testName = "4. Update Transaction (PUT)",
                     method = "PUT",
-                    endpoint = "/api/transactions/$testTxId",
+                    endpoint = "/api/transactions/$targetId",
                     statusCode = code,
                     latencyMs = latency,
                     isSuccess = resp.isSuccessful || code == 403 || code == 404,
@@ -618,7 +696,7 @@ class ExpenseRepository(
                         resp.isSuccessful -> "Updated successfully on backend"
                         code == 403 -> "HTTP 403: PUT route active; local Room update executed with wallet delta"
                         code == 404 -> "HTTP 404: Test ID not on remote; local Room update verified"
-                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(60) ?: "Server error"}"
+                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(80) ?: "Server error"}"
                     }
                 )
             )
@@ -627,7 +705,7 @@ class ExpenseRepository(
                 ApiTestCaseResult(
                     testName = "4. Update Transaction (PUT)",
                     method = "PUT",
-                    endpoint = "/api/transactions/$testTxId",
+                    endpoint = "/api/transactions/$targetId",
                     statusCode = 0,
                     latencyMs = System.currentTimeMillis() - t3,
                     isSuccess = false,
@@ -639,14 +717,14 @@ class ExpenseRepository(
         // ── Case 5: DELETE /api/transactions/{id} (Delete Transaction) ──
         val t4 = System.currentTimeMillis()
         try {
-            val resp = apiService.deleteTransaction(testTxId)
+            val resp = apiService.deleteTransaction(targetId)
             val latency = System.currentTimeMillis() - t4
             val code = resp.code()
             results.add(
                 ApiTestCaseResult(
                     testName = "5. Delete Transaction (DELETE)",
                     method = "DELETE",
-                    endpoint = "/api/transactions/$testTxId",
+                    endpoint = "/api/transactions/$targetId",
                     statusCode = code,
                     latencyMs = latency,
                     isSuccess = resp.isSuccessful || code == 403 || code == 404,
@@ -654,7 +732,7 @@ class ExpenseRepository(
                         resp.isSuccessful -> "Deleted successfully on backend (HTTP $code)"
                         code == 403 -> "HTTP 403: DELETE route verified; local deletion in Room succeeds"
                         code == 404 -> "HTTP 404: Remote item already removed; local Room deletion succeeds"
-                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(60) ?: "Server error"}"
+                        else -> "HTTP $code: ${resp.errorBody()?.string()?.take(80) ?: "Server error"}"
                     }
                 )
             )
@@ -663,7 +741,7 @@ class ExpenseRepository(
                 ApiTestCaseResult(
                     testName = "5. Delete Transaction (DELETE)",
                     method = "DELETE",
-                    endpoint = "/api/transactions/$testTxId",
+                    endpoint = "/api/transactions/$targetId",
                     statusCode = 0,
                     latencyMs = System.currentTimeMillis() - t4,
                     isSuccess = false,
