@@ -52,6 +52,9 @@ class BackendCrudTest {
         override suspend fun forgotPassword(request: com.example.network.ForgotPasswordRequest) =
             Response.error<ApiResponse<Unit>>(403, ResponseBody.create(null, "Forbidden"))
 
+        override suspend fun verifyOtp(request: com.example.network.VerifyOtpRequest): Response<ApiResponse<Unit>> =
+            Response.success(ApiResponse<Unit>(success = true, message = "OTP verified", data = Unit))
+
         override suspend fun resetPassword(request: com.example.network.ResetPasswordRequest) =
             Response.error<ApiResponse<Unit>>(403, ResponseBody.create(null, "Forbidden"))
 
@@ -79,6 +82,12 @@ class BackendCrudTest {
 
         override suspend fun addWallet(wallet: ServerWallet): Response<ApiResponse<ServerWallet>> =
             Response.success(ApiResponse(success = true, data = wallet))
+
+        override suspend fun updateWallet(id: String, wallet: ServerWallet): Response<ApiResponse<ServerWallet>> =
+            Response.success(ApiResponse(success = true, data = wallet))
+
+        override suspend fun updateCardCustomization(id: String, customization: com.example.network.CardCustomizationRequest): Response<ApiResponse<ServerWallet>> =
+            Response.success(ApiResponse(success = true, data = null))
 
         override suspend fun deleteWallet(id: String): Response<ResponseBody> =
             Response.success(ResponseBody.create(null, ""))

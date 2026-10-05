@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.TransactionEntity
 import com.example.model.WalletEntity
 import com.example.network.formatDisplayDate
+import com.example.ui.theme.AppTheme
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
 
@@ -88,18 +89,19 @@ fun RecentPayments(
     onTransactionClick: (TransactionEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
+
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        border = BorderStroke(1.dp, colors.surfaceBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(20.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -107,30 +109,33 @@ fun RecentPayments(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Recent Payments",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "Payment History",
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = colors.textCrispWhite,
+                    letterSpacing = (-0.3).sp
                 )
 
                 Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
                         .clickable(onClick = onViewAllClick)
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
                         .testTag("view_all_transactions_btn"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "View All",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = colors.brandColor
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Icon(
                         imageVector = Icons.Default.ArrowForward,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
+                        tint = colors.brandColor,
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             }
@@ -141,33 +146,96 @@ fun RecentPayments(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 24.dp),
+                        .padding(vertical = 32.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "No recent transactions",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            shape = CircleShape,
+                            color = colors.surfaceVariant,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalAtm,
+                                    contentDescription = null,
+                                    tint = colors.textMutedLavender,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "No transactions yet",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = colors.textCrispWhite
+                        )
+                        Text(
+                            text = "Your recent spending will appear here",
+                            fontSize = 12.sp,
+                            color = colors.textMutedLavender
+                        )
+                    }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    transactions.take(4).forEachIndexed { index, tx ->
-                        TransactionItemRow(
-                            transaction = tx,
-                            walletName = wallets.find { it.id == tx.walletId }?.bankName ?: "",
-                            currencySymbol = currencySymbol,
-                            onClick = { onTransactionClick(tx) }
-                        )
-                        if (index < transactions.take(4).size - 1) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                thickness = 0.8.dp
-                            )
+                val grouped = groupTransactionsByDate(transactions.take(6))
+
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOf("Today", "Yesterday", "Earlier").forEach { groupKey ->
+                        val listInGroup = grouped[groupKey]
+                        if (!listInGroup.isNullOrEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = groupKey,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textMutedLavender,
+                                    letterSpacing = 0.5.sp
+                                )
+
+                                listInGroup.forEachIndexed { idx, tx ->
+                                    TransactionItemRow(
+                                        transaction = tx,
+                                        walletName = wallets.find { it.id == tx.walletId }?.bankName ?: "",
+                                        currencySymbol = currencySymbol,
+                                        onClick = { onTransactionClick(tx) }
+                                    )
+                                    if (idx < listInGroup.size - 1) {
+                                        HorizontalDivider(
+                                            color = colors.surfaceBorder.copy(alpha = 0.5f),
+                                            thickness = 0.8.dp,
+                                            modifier = Modifier.padding(start = 54.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+private fun groupTransactionsByDate(transactions: List<TransactionEntity>): Map<String, List<TransactionEntity>> {
+    val cal = java.util.Calendar.getInstance()
+    val todayYear = cal.get(java.util.Calendar.YEAR)
+    val todayDay = cal.get(java.util.Calendar.DAY_OF_YEAR)
+
+    cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+    val yesterdayYear = cal.get(java.util.Calendar.YEAR)
+    val yesterdayDay = cal.get(java.util.Calendar.DAY_OF_YEAR)
+
+    return transactions.groupBy { tx ->
+        val txCal = java.util.Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+        val txYear = txCal.get(java.util.Calendar.YEAR)
+        val txDay = txCal.get(java.util.Calendar.DAY_OF_YEAR)
+
+        when {
+            txYear == todayYear && txDay == todayDay -> "Today"
+            txYear == yesterdayYear && txDay == yesterdayDay -> "Yesterday"
+            else -> "Earlier"
         }
     }
 }
@@ -180,15 +248,27 @@ fun TransactionItemRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
     val isExpense = transaction.type.equals("expense", ignoreCase = true)
     val catColor = getCategoryColor(transaction.category)
     val catIcon = getCategoryIcon(transaction.category)
 
+    val title = when {
+        transaction.description.isNotBlank() -> transaction.description
+        else -> transaction.category.ifBlank { "Transaction" }
+    }
+
+    val subtitle = when {
+        transaction.description.isNotBlank() && transaction.category.isNotBlank() -> "${transaction.category} • ${formatDisplayDate(transaction.date)}"
+        else -> formatDisplayDate(transaction.date).ifBlank { "Payment" }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -198,8 +278,8 @@ fun TransactionItemRow(
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(catColor.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -207,46 +287,43 @@ fun TransactionItemRow(
                     imageVector = catIcon,
                     contentDescription = transaction.category,
                     tint = catColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = transaction.category.ifBlank { "Uncategorized" },
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = colors.textCrispWhite,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (transaction.isRecurring) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Default.Repeat,
                             contentDescription = "Recurring",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = colors.brandColor,
                             modifier = Modifier.size(13.dp)
                         )
                     }
                 }
 
+                Spacer(modifier = Modifier.height(2.dp))
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val displayDate = formatDisplayDate(transaction.date)
-                    val descText = when {
-                        transaction.description.isNotBlank() && displayDate.isNotBlank() -> "${transaction.description} • $displayDate"
-                        transaction.description.isNotBlank() -> transaction.description
-                        else -> displayDate.ifBlank { "Transaction" }
-                    }
                     Text(
-                        text = descText,
+                        text = subtitle,
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.textMutedLavender,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
@@ -254,14 +331,14 @@ fun TransactionItemRow(
                     if (walletName.isNotBlank()) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            color = colors.surfaceVariant,
+                            border = BorderStroke(0.5.dp, colors.surfaceBorder)
                         ) {
                             Text(
                                 text = walletName,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textMutedLavender,
                                 maxLines = 1,
                                 softWrap = false,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -276,7 +353,8 @@ fun TransactionItemRow(
             text = "${if (isExpense) "-" else "+"}${formatCurrency(transaction.amount, currencySymbol)}",
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
-            color = if (isExpense) DangerRed else SuccessGreen
+            color = if (isExpense) DangerRed else SuccessGreen,
+            letterSpacing = (-0.2).sp
         )
     }
 }

@@ -144,9 +144,9 @@ fun BottomNavBar(
                     testTag = "nav_tab_transactions"
                 )
 
-                // 4. Analyze Tab
+                // 4. Analytics Tab
                 NavSegmentItem(
-                    title = "Analyze",
+                    title = "Analytics",
                     isSelected = currentTab == ScreenTab.BUDGET,
                     onClick = { onTabSelected(ScreenTab.BUDGET) },
                     inactiveIconColor = inactiveIconColor,

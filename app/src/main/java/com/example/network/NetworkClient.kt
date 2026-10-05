@@ -41,6 +41,11 @@ interface BackendApiService {
         @Body request: ForgotPasswordRequest
     ): Response<ApiResponse<Unit>>
 
+    @POST("api/auth/verify-otp")
+    suspend fun verifyOtp(
+        @Body request: VerifyOtpRequest
+    ): Response<ApiResponse<Unit>>
+
     @POST("api/auth/reset-password")
     suspend fun resetPassword(
         @Body request: ResetPasswordRequest
@@ -79,6 +84,18 @@ interface BackendApiService {
     @POST("api/wallet")
     suspend fun addWallet(
         @Body wallet: ServerWallet
+    ): Response<ApiResponse<ServerWallet>>
+
+    @PUT("api/wallet/{id}")
+    suspend fun updateWallet(
+        @Path("id") id: String,
+        @Body wallet: ServerWallet
+    ): Response<ApiResponse<ServerWallet>>
+
+    @PUT("api/wallet/{id}/customization")
+    suspend fun updateCardCustomization(
+        @Path("id") id: String,
+        @Body customization: CardCustomizationRequest
     ): Response<ApiResponse<ServerWallet>>
 
     @DELETE("api/wallet/{id}")

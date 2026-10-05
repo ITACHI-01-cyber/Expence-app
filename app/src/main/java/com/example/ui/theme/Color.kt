@@ -27,43 +27,43 @@ data class AppThemeColors(
     val brandColor: Color
 )
 
-// ── 1. Purple / Plum Palette (Default / Image Reference) ──
+// ── 1. Default Fintech Modern Palette (Dark Mode) ──
 val PurpleThemeColors = AppThemeColors(
-    background = Color(0xFF322A4E),
-    backgroundDark = Color(0xFF27203F),
-    surface = Color(0xFF423963),
-    surfaceVariant = Color(0xFF4C4270),
-    surfaceContainer = Color(0xFF3B3359),
-    surfaceBorder = Color(0xFF554B7C),
-    primaryAccent = Color(0xFFF5CE9F),      // Warm Peach / Sand
-    primaryAccentLight = Color(0xFFFBE4C6),
-    onPrimaryAccent = Color(0xFF2B2245),
-    ctaButton = Color(0xFF262553),          // Deep Slate Blue
+    background = Color(0xFF0C0E14),
+    backgroundDark = Color(0xFF08090D),
+    surface = Color(0xFF151821),
+    surfaceVariant = Color(0xFF1E2230),
+    surfaceContainer = Color(0xFF191D28),
+    surfaceBorder = Color(0xFF282D3D),
+    primaryAccent = Color(0xFF6366F1),      // Modern Indigo
+    primaryAccentLight = Color(0xFF818CF8),
+    onPrimaryAccent = Color(0xFFFFFFFF),
+    ctaButton = Color(0xFF6366F1),          // Primary Indigo CTA
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFFFFFFFF),
-    textMutedLavender = Color(0xFFB3A8CE),
-    textSoftPurple = Color(0xFF968AA9),
-    accentGlow = Color(0xFFF5CE9F),
-    brandColor = Color(0xFF8B5CF6)
+    textCrispWhite = Color(0xFFF9FAFB),
+    textMutedLavender = Color(0xFF94A3B8),
+    textSoftPurple = Color(0xFF64748B),
+    accentGlow = Color(0xFF6366F1),
+    brandColor = Color(0xFF818CF8)
 )
 
 // ── 2. Blue / Sapphire Palette (Fintech Modern) ──
 val BlueThemeColors = AppThemeColors(
-    background = Color(0xFF0F172A),
-    backgroundDark = Color(0xFF090D16),
-    surface = Color(0xFF1E293B),
-    surfaceVariant = Color(0xFF293548),
-    surfaceContainer = Color(0xFF182234),
-    surfaceBorder = Color(0xFF384B66),
-    primaryAccent = Color(0xFF60A5FA),      // Electric Sky Blue
-    primaryAccentLight = Color(0xFF93C5FD),
-    onPrimaryAccent = Color(0xFF0F172A),
-    ctaButton = Color(0xFF1D4ED8),          // Royal Navy Blue
+    background = Color(0xFF0B0F19),
+    backgroundDark = Color(0xFF070A12),
+    surface = Color(0xFF131B2E),
+    surfaceVariant = Color(0xFF1C2740),
+    surfaceContainer = Color(0xFF162035),
+    surfaceBorder = Color(0xFF243354),
+    primaryAccent = Color(0xFF3B82F6),      // Electric Sky Blue
+    primaryAccentLight = Color(0xFF60A5FA),
+    onPrimaryAccent = Color(0xFFFFFFFF),
+    ctaButton = Color(0xFF2563EB),          // Royal Navy Blue
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFFFFFFFF),
+    textCrispWhite = Color(0xFFF8FAFC),
     textMutedLavender = Color(0xFF94A3B8),
     textSoftPurple = Color(0xFF64748B),
-    accentGlow = Color(0xFF60A5FA),
+    accentGlow = Color(0xFF3B82F6),
     brandColor = Color(0xFF3B82F6)
 )
 
@@ -80,106 +80,106 @@ val EmeraldThemeColors = AppThemeColors(
     onPrimaryAccent = Color(0xFF022C22),
     ctaButton = Color(0xFF047857),          // Deep Pine Spruce
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFFFFFFFF),
+    textCrispWhite = Color(0xFFF9FAFB),
     textMutedLavender = Color(0xFFA7F3D0).copy(alpha = 0.8f),
     textSoftPurple = Color(0xFF6EE7B7).copy(alpha = 0.7f),
     accentGlow = Color(0xFF34D399),
     brandColor = Color(0xFF10B981)
 )
 
-// ── 4. Rose / Crimson Palette (Luxury Velvet - In User Screenshot) ──
+// ── 4. Rose / Crimson Palette (Luxury Velvet) ──
 val RoseThemeColors = AppThemeColors(
-    background = Color(0xFF26101B),
-    backgroundDark = Color(0xFF1A0A12),
-    surface = Color(0xFF3D1B2B),
-    surfaceVariant = Color(0xFF4F2438),
-    surfaceContainer = Color(0xFF331624),
-    surfaceBorder = Color(0xFF6B2949),
+    background = Color(0xFF180A12),
+    backgroundDark = Color(0xFF10060C),
+    surface = Color(0xFF2B1320),
+    surfaceVariant = Color(0xFF3C1C2E),
+    surfaceContainer = Color(0xFF24101B),
+    surfaceBorder = Color(0xFF4C2139),
     primaryAccent = Color(0xFFFB7185),      // Warm Coral Rose
     primaryAccentLight = Color(0xFFFDA4AF),
-    onPrimaryAccent = Color(0xFF4C0519),
-    ctaButton = Color(0xFF9F1239),          // Deep Crimson Ruby
+    onPrimaryAccent = Color(0xFFFFFFFF),
+    ctaButton = Color(0xFFE11D48),          // Deep Crimson Ruby
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFFFFFFFF),
-    textMutedLavender = Color(0xFFF472B6).copy(alpha = 0.8f),
-    textSoftPurple = Color(0xFFFDA4AF).copy(alpha = 0.7f),
+    textCrispWhite = Color(0xFFFFF1F2),
+    textMutedLavender = Color(0xFFFDA4AF),
+    textSoftPurple = Color(0xFFFB7185),
     accentGlow = Color(0xFFFB7185),
     brandColor = Color(0xFFF43F5E)
 )
 
-// ── Light Theme Palettes ──
+// ── Light Theme Palettes (Premium Minimal Fintech #F5F5F7) ──
 val PurpleLightColors = AppThemeColors(
-    background = Color(0xFFF6F4FB),
-    backgroundDark = Color(0xFFECE7F7),
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFF1EDFA),
-    surfaceContainer = Color(0xFFE8E2F5),
-    surfaceBorder = Color(0xFFD8CEEE),
-    primaryAccent = Color(0xFF7C3AED),      // Royal Purple
-    primaryAccentLight = Color(0xFFDDD6FE),
+    background = Color(0xFFF5F5F7),        // Soft off-white as requested
+    backgroundDark = Color(0xFFEBEBF0),
+    surface = Color(0xFFFFFFFF),           // Crisp white cards
+    surfaceVariant = Color(0xFFF0F1F5),    // Subtle light-gray pills
+    surfaceContainer = Color(0xFFE8E9EE),
+    surfaceBorder = Color(0xFFE5E7EB),     // Hairline border
+    primaryAccent = Color(0xFF111827),     // Near-black charcoal
+    primaryAccentLight = Color(0xFF374151),
     onPrimaryAccent = Color(0xFFFFFFFF),
-    ctaButton = Color(0xFF4C1D95),          // Deep Purple
+    ctaButton = Color(0xFF111827),         // Dark premium CTA
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFF1E1730),     // Dark text in light mode
-    textMutedLavender = Color(0xFF6B5C8A),  // Secondary text
-    textSoftPurple = Color(0xFF8B7AA9),
-    accentGlow = Color(0xFF7C3AED),
-    brandColor = Color(0xFF8B5CF6)
+    textCrispWhite = Color(0xFF111827),    // Near-black primary text
+    textMutedLavender = Color(0xFF6B7280), // Muted gray secondary text
+    textSoftPurple = Color(0xFF9CA3AF),    // Subtle tertiary text
+    accentGlow = Color(0xFF4F46E5),
+    brandColor = Color(0xFF4F46E5)         // Restrained indigo accent
 )
 
 val BlueLightColors = AppThemeColors(
-    background = Color(0xFFF1F5F9),
-    backgroundDark = Color(0xFFE2E8F0),
+    background = Color(0xFFF5F5F7),
+    backgroundDark = Color(0xFFEBEBF0),
     surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFE0EBF7),
-    surfaceContainer = Color(0xFFD6E4F5),
-    surfaceBorder = Color(0xFFBFDBFE),
-    primaryAccent = Color(0xFF2563EB),      // Bright Blue
-    primaryAccentLight = Color(0xFFBFDBFE),
+    surfaceVariant = Color(0xFFF0F2F7),
+    surfaceContainer = Color(0xFFE5E9F2),
+    surfaceBorder = Color(0xFFE2E8F0),
+    primaryAccent = Color(0xFF1E293B),
+    primaryAccentLight = Color(0xFF3B82F6),
     onPrimaryAccent = Color(0xFFFFFFFF),
-    ctaButton = Color(0xFF1E40AF),          // Deep Blue CTA
+    ctaButton = Color(0xFF0F172A),
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFF0F172A),     // Dark text in light mode
-    textMutedLavender = Color(0xFF475569),
-    textSoftPurple = Color(0xFF64748B),
+    textCrispWhite = Color(0xFF0F172A),
+    textMutedLavender = Color(0xFF64748B),
+    textSoftPurple = Color(0xFF94A3B8),
     accentGlow = Color(0xFF2563EB),
-    brandColor = Color(0xFF3B82F6)
+    brandColor = Color(0xFF2563EB)
 )
 
 val EmeraldLightColors = AppThemeColors(
-    background = Color(0xFFF0FDF4),
-    backgroundDark = Color(0xFFDCFCE7),
+    background = Color(0xFFF5F5F7),
+    backgroundDark = Color(0xFFEBEBF0),
     surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFE1F8EB),
-    surfaceContainer = Color(0xFFD1F4E0),
-    surfaceBorder = Color(0xFFA7F3D0),
-    primaryAccent = Color(0xFF059669),      // Vivid Emerald
-    primaryAccentLight = Color(0xFFA7F3D0),
+    surfaceVariant = Color(0xFFF0F4F2),
+    surfaceContainer = Color(0xFFE2ECE6),
+    surfaceBorder = Color(0xFFE5E7EB),
+    primaryAccent = Color(0xFF064E3B),
+    primaryAccentLight = Color(0xFF059669),
     onPrimaryAccent = Color(0xFFFFFFFF),
-    ctaButton = Color(0xFF065F46),          // Deep Pine
+    ctaButton = Color(0xFF064E3B),
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFF064E3B),     // Dark text in light mode
-    textMutedLavender = Color(0xFF374151),
-    textSoftPurple = Color(0xFF4B5563),
+    textCrispWhite = Color(0xFF0F172A),
+    textMutedLavender = Color(0xFF6B7280),
+    textSoftPurple = Color(0xFF9CA3AF),
     accentGlow = Color(0xFF059669),
     brandColor = Color(0xFF10B981)
 )
 
 val RoseLightColors = AppThemeColors(
-    background = Color(0xFFFFF1F2),
-    backgroundDark = Color(0xFFFFE4E6),
+    background = Color(0xFFF5F5F7),
+    backgroundDark = Color(0xFFEBEBF0),
     surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFFDE8EB),
-    surfaceContainer = Color(0xFFFCD5DB),
-    surfaceBorder = Color(0xFFFECDD3),
-    primaryAccent = Color(0xFFE11D48),      // Rose Crimson
-    primaryAccentLight = Color(0xFFFECDD3),
+    surfaceVariant = Color(0xFFF6F0F2),
+    surfaceContainer = Color(0xFFECE0E4),
+    surfaceBorder = Color(0xFFE5E7EB),
+    primaryAccent = Color(0xFF881337),
+    primaryAccentLight = Color(0xFFE11D48),
     onPrimaryAccent = Color(0xFFFFFFFF),
-    ctaButton = Color(0xFF9F1239),          // Deep Crimson
+    ctaButton = Color(0xFF881337),
     onCtaButton = Color(0xFFFFFFFF),
-    textCrispWhite = Color(0xFF4C0519),     // Dark text in light mode
-    textMutedLavender = Color(0xFF881337),
-    textSoftPurple = Color(0xFF9F1239),
+    textCrispWhite = Color(0xFF0F172A),
+    textMutedLavender = Color(0xFF6B7280),
+    textSoftPurple = Color(0xFF9CA3AF),
     accentGlow = Color(0xFFE11D48),
     brandColor = Color(0xFFF43F5E)
 )

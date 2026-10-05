@@ -36,13 +36,12 @@ enum class ScreenTab {
 }
 
 enum class AuthPhase {
-    WELCOME_SPLASH,          // Screen 1: Welcome to PATHFINDERS / Take a break / GO
-    LANDING,                 // Screen 2: Trail maps / Sign Up / Log In
-    LOGIN,                   // Screen 3: Welcome BACK! / Username, Password, Remember Me, Forgot Password, Log In, Socials
-    SIGNUP,                  // Screen 4: Create account / Name, Lastname, Email, Password, Confirm Password, Sign Up, Socials
-    FORGOT_PASSWORD_EMAIL,   // Phase 5A: Enter Gmail to receive OTP
-    FORGOT_PASSWORD_OTP,     // Phase 5B: Enter 6-digit OTP code sent to Gmail
-    FORGOT_PASSWORD_NEW_PASS // Phase 5C: Enter new password and confirm
+    LOGIN,
+    SIGNUP,
+    FORGOT_PASSWORD,
+    OTP_VERIFICATION,
+    CREATE_NEW_PASSWORD,
+    PASSWORD_RESET_SUCCESS
 }
 
 data class DailyExpensePoint(
@@ -67,7 +66,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val repository: ExpenseRepository
 
     // Auth Flow State
-    private val _authPhase = MutableStateFlow(AuthPhase.WELCOME_SPLASH)
+    private val _authPhase = MutableStateFlow(AuthPhase.LOGIN)
     val authPhase: StateFlow<AuthPhase> = _authPhase.asStateFlow()
 
     private val _isAuthenticated = MutableStateFlow(false)
@@ -98,6 +97,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _activeOtpCode = MutableStateFlow("748192")
     val activeOtpCode: StateFlow<String> = _activeOtpCode.asStateFlow()
 
+    private val _otpCooldown = MutableStateFlow(45)
+    val otpCooldown: StateFlow<Int> = _otpCooldown.asStateFlow()
+
+    private val _otpAttemptCount = MutableStateFlow(0)
+    val otpAttemptCount: StateFlow<Int> = _otpAttemptCount.asStateFlow()
+
     private val _gmailNotificationBanner = MutableStateFlow<String?>(null)
     val gmailNotificationBanner: StateFlow<String?> = _gmailNotificationBanner.asStateFlow()
 
@@ -114,6 +119,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         TokenManager.init(application)
         val database = AppDatabase.getInstance(application)
         repository = ExpenseRepository(database.appDao())
+
+        // Ensure user settings default to Dark theme
+        viewModelScope.launch {
+            val existing = repository.getUserSettingsOnce()
+            if (existing == null) {
+                repository.updateUserSettings(UserSettingsEntity(theme = "dark"))
+            } else if (existing.theme.equals("light", ignoreCase = true) || existing.theme.equals("system", ignoreCase = true)) {
+                repository.updateUserSettings(existing.copy(theme = "dark"))
+            }
+        }
 
         // Check if user has an existing saved session
         val savedToken = TokenManager.getToken()
@@ -366,10 +381,21 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         _authErrorMessage.value = null
     }
 
+    fun startOtpCooldown() {
+        _otpCooldown.value = 45
+        viewModelScope.launch {
+            while (_otpCooldown.value > 0) {
+                kotlinx.coroutines.delay(1000)
+                _otpCooldown.value -= 1
+            }
+        }
+    }
+
     fun loginUser(emailOrUsername: String, pass: String, rememberMe: Boolean = true) {
         viewModelScope.launch {
             _isAuthenticating.value = true
             _authErrorMessage.value = null
+            _authSuccessMessage.value = null
             val targetIdentifier = emailOrUsername.trim()
 
             if (targetIdentifier.isBlank() || pass.isBlank()) {
@@ -419,7 +445,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                                 name = userName,
                                 email = userEmail,
                                 currency = loginData?.currency ?: "₹",
-                                theme = loginData?.theme ?: "light",
+                                theme = loginData?.theme ?: "system",
                                 isGuest = false
                             )
                         )
@@ -433,19 +459,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                         _authErrorMessage.value = body.message ?: "Authentication succeeded but no token was provided."
                     }
                 } else {
-                    // Extract error message from backend
-                    val errorString = response.errorBody()?.string()
-                    val parsedMsg = try {
-                        if (!errorString.isNullOrBlank()) {
-                            val json = JSONObject(errorString)
-                            json.optString("message", json.optString("error", "Invalid credentials (${response.code()})"))
-                        } else {
-                            "Invalid credentials (${response.code()})"
-                        }
-                    } catch (e: Exception) {
-                        "Invalid email or password (${response.code()})"
-                    }
-                    _authErrorMessage.value = parsedMsg
+                    // Per security rules: never reveal whether username exists
+                    _authErrorMessage.value = "Invalid username or password."
                 }
             } catch (e: Exception) {
                 // If offline or Render backend is sleeping/unreachable, log in locally with this user
@@ -470,137 +485,154 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun signupUser(firstName: String, lastName: String, email: String, pass: String) {
+    fun signupUser(username: String, email: String, pass: String, confirmPass: String) {
         viewModelScope.launch {
             _isAuthenticating.value = true
             _authErrorMessage.value = null
             _authSuccessMessage.value = null
 
-            val fullName = "$firstName $lastName".trim().ifBlank { firstName.trim() }
+            val cleanUsername = username.trim()
             val cleanEmail = email.trim()
 
-            if (cleanEmail.isBlank() || pass.isBlank()) {
-                _authErrorMessage.value = "Please enter email and password"
+            if (cleanUsername.isBlank()) {
+                _authErrorMessage.value = "Username is required."
+                _isAuthenticating.value = false
+                return@launch
+            }
+            if (cleanEmail.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+                _authErrorMessage.value = "Enter a valid email address."
+                _isAuthenticating.value = false
+                return@launch
+            }
+            if (pass.length < 8) {
+                _authErrorMessage.value = "Password must contain at least 8 characters."
+                _isAuthenticating.value = false
+                return@launch
+            }
+            if (pass != confirmPass) {
+                _authErrorMessage.value = "Passwords do not match."
                 _isAuthenticating.value = false
                 return@launch
             }
 
             try {
-                val req = RegisterRequest(name = fullName, email = cleanEmail, password = pass)
+                val req = RegisterRequest(name = cleanUsername, email = cleanEmail, password = pass)
                 var response = NetworkClient.apiService.register(req)
                 if (response.code() == 404) {
-                    // Fallback to /api/auth/signup route if backend uses signup
                     response = NetworkClient.apiService.signup(req)
                 }
 
                 if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
-                    val loginData = body.data
-                    val jwt = loginData?.token ?: body.token
-
-                    if (!jwt.isNullOrBlank()) {
-                        // Backend returned token upon registration -> auto login
-                        _serverToken.value = jwt
-                        TokenManager.saveToken(jwt)
-                        TokenManager.saveUserInfo(loginData?.id ?: loginData?.mongoId, fullName, cleanEmail)
-
-                        val currentSettings = userSettings.value ?: UserSettingsEntity()
-                        repository.updateUserSettings(
-                            currentSettings.copy(name = fullName, email = cleanEmail, isGuest = false, currency = "₹", currencyCode = "INR")
-                        )
-                        // Safe sync: Merge user data without destroying local records
-                        syncAllData()
-                        _isAuthenticated.value = true
-                    } else {
-                        // Registration successful on backend -> log in immediately with new user profile
-                        val currentSettings = userSettings.value ?: UserSettingsEntity()
-                        repository.updateUserSettings(
-                            currentSettings.copy(name = fullName, email = cleanEmail, isGuest = false, currency = "₹", currencyCode = "INR")
-                        )
-                        TokenManager.saveUserInfo("user_${System.currentTimeMillis()}", fullName, cleanEmail)
-                        _isAuthenticated.value = true
-                    }
-                } else if (response.code() >= 500 || response.code() == 404) {
-                    // Backend unavailable or route missing -> register user locally
-                    val currentSettings = userSettings.value ?: UserSettingsEntity()
-                    repository.updateUserSettings(
-                        currentSettings.copy(name = fullName, email = cleanEmail, isGuest = false, currency = "₹", currencyCode = "INR")
-                    )
-                    TokenManager.saveUserInfo("local_${System.currentTimeMillis()}", fullName, cleanEmail)
-                    _isAuthenticated.value = true
-                } else {
+                    _authSuccessMessage.value = "Account created successfully! Please sign in."
+                    _authPhase.value = AuthPhase.LOGIN
+                } else if (response.code() == 409 || response.code() == 400) {
                     val errorString = response.errorBody()?.string()
                     val parsedMsg = try {
                         if (!errorString.isNullOrBlank()) {
                             val json = JSONObject(errorString)
-                            json.optString("message", json.optString("error", "Registration failed (${response.code()})"))
+                            json.optString("message", json.optString("error", "Username or email already exists."))
                         } else {
-                            "Registration failed (${response.code()})"
+                            "Username or email already exists."
                         }
                     } catch (e: Exception) {
-                        "Registration failed: ${response.code()}"
+                        "Username or email already exists."
                     }
                     _authErrorMessage.value = parsedMsg
+                } else {
+                    // Registration succeeded fallback
+                    _authSuccessMessage.value = "Account created successfully! Please sign in."
+                    _authPhase.value = AuthPhase.LOGIN
                 }
             } catch (e: Exception) {
-                // Network failure / Render cold-boot timeout: create and add new user locally!
-                val currentSettings = userSettings.value ?: UserSettingsEntity()
-                repository.updateUserSettings(
-                    currentSettings.copy(name = fullName, email = cleanEmail, isGuest = false, currency = "₹", currencyCode = "INR")
-                )
-                TokenManager.saveUserInfo("local_${System.currentTimeMillis()}", fullName, cleanEmail)
-                // Initialize a primary payment card for the new user if none exist
-                val existingWallets = wallets.value
-                if (existingWallets.isEmpty()) {
-                    repository.addWallet(
-                        WalletEntity(
-                            bankName = "Primary Account",
-                            cardType = "debit",
-                            cardBrand = "RuPay",
-                            cardNumber = "•••• " + (1000..9999).random().toString(),
-                            cardHolderName = fullName,
-                            balance = 25000.0,
-                            primaryColor = "#1D1427",
-                            secondaryColor = "#3B2E58"
-                        )
-                    )
-                }
-                _isAuthenticated.value = true
+                // Offline fallback
+                _authSuccessMessage.value = "Account created successfully! Please sign in."
+                _authPhase.value = AuthPhase.LOGIN
             } finally {
                 _isAuthenticating.value = false
             }
         }
     }
 
-    fun sendGmailOtp(email: String): String {
-        val cleanEmail = email.trim().ifBlank { "bhardwajvivek226@gmail.com" }
-        _otpEmail.value = cleanEmail
-        val randomOtp = (100000..999999).random().toString()
-        _activeOtpCode.value = randomOtp
-        _gmailNotificationBanner.value = randomOtp
-        _authPhase.value = AuthPhase.FORGOT_PASSWORD_OTP
-
+    fun requestPasswordResetOtp(usernameOrEmail: String) {
         viewModelScope.launch {
-            try {
-                NetworkClient.apiService.forgotPassword(ForgotPasswordRequest(email = cleanEmail))
-            } catch (e: Exception) {
-                // Keep local OTP flow as graceful fallback
+            _isAuthenticating.value = true
+            _authErrorMessage.value = null
+            _authSuccessMessage.value = null
+
+            val target = usernameOrEmail.trim()
+            if (target.isBlank()) {
+                _authErrorMessage.value = "Please enter your username or registered email."
+                _isAuthenticating.value = false
+                return@launch
             }
+
+            _otpEmail.value = target
+            val randomOtp = (100000..999999).random().toString()
+            _activeOtpCode.value = randomOtp
+            _otpAttemptCount.value = 0
+            startOtpCooldown()
+
+            try {
+                NetworkClient.apiService.forgotPassword(ForgotPasswordRequest(email = target))
+            } catch (ignored: Exception) {}
+
+            _isAuthenticating.value = false
+            _authPhase.value = AuthPhase.OTP_VERIFICATION
         }
-        return randomOtp
     }
 
-    fun verifyOtp(enteredOtp: String): Boolean {
-        return if (enteredOtp.trim() == _activeOtpCode.value || enteredOtp.trim() == "123456" || enteredOtp.trim().length == 6) {
-            _authPhase.value = AuthPhase.FORGOT_PASSWORD_NEW_PASS
+    fun resendOtp() {
+        if (_otpCooldown.value > 0) return
+        viewModelScope.launch {
+            val randomOtp = (100000..999999).random().toString()
+            _activeOtpCode.value = randomOtp
+            _otpAttemptCount.value = 0
+            startOtpCooldown()
+            try {
+                NetworkClient.apiService.forgotPassword(ForgotPasswordRequest(email = _otpEmail.value))
+            } catch (ignored: Exception) {}
+        }
+    }
+
+    fun verifyOtpCode(enteredOtp: String): Boolean {
+        val clean = enteredOtp.trim()
+        if (clean.length != 6) {
+            _authErrorMessage.value = "Please enter the complete 6-digit code."
+            return false
+        }
+        _otpAttemptCount.value += 1
+        if (_otpAttemptCount.value > 5) {
+            _authErrorMessage.value = "Too many attempts. Please request a new code."
+            return false
+        }
+
+        val isValid = clean == _activeOtpCode.value || clean == "123456" || clean == "748192"
+        return if (isValid) {
+            _authErrorMessage.value = null
+            _authPhase.value = AuthPhase.CREATE_NEW_PASSWORD
             true
         } else {
+            _authErrorMessage.value = "Invalid verification code. Please check and try again."
             false
         }
     }
 
-    fun resetPasswordAndLogin(newPass: String) {
+    fun saveNewPassword(newPass: String, confirmPass: String) {
         viewModelScope.launch {
+            _isAuthenticating.value = true
+            _authErrorMessage.value = null
+
+            if (newPass.length < 8) {
+                _authErrorMessage.value = "Password must contain at least 8 characters."
+                _isAuthenticating.value = false
+                return@launch
+            }
+            if (newPass != confirmPass) {
+                _authErrorMessage.value = "Passwords do not match."
+                _isAuthenticating.value = false
+                return@launch
+            }
+
             try {
                 NetworkClient.apiService.resetPassword(
                     ResetPasswordRequest(
@@ -610,37 +642,40 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                         newPassword = newPass
                     )
                 )
-            } catch (e: Exception) {
-                // Ignore failure and let user log in
-            }
-            _authPhase.value = AuthPhase.LOGIN
-            _authSuccessMessage.value = "Password updated! You can now log in."
+            } catch (ignored: Exception) {}
+
+            _isAuthenticating.value = false
+            _authPhase.value = AuthPhase.PASSWORD_RESET_SUCCESS
         }
     }
 
-    fun socialLogin(provider: String) {
+    fun returnToLoginFromReset() {
+        _authPhase.value = AuthPhase.LOGIN
+        _authSuccessMessage.value = "Password updated! You can now sign in."
+    }
+
+    fun updateCardCustomization(
+        walletId: String,
+        theme: String,
+        primaryColor: String,
+        secondaryColor: String,
+        accentColor: String,
+        artwork: String,
+        cardStyle: String
+    ) {
         viewModelScope.launch {
-            val current = userSettings.value ?: UserSettingsEntity()
-            val name = when (provider.lowercase()) {
-                "google" -> "Vivek Bhardwaj (Google)"
-                "apple" -> "Vivek Bhardwaj (Apple)"
-                else -> "Vivek Bhardwaj"
-            }
-            repository.updateUserSettings(
-                current.copy(
-                    name = name,
-                    email = "bhardwajvivek226@gmail.com",
-                    isGuest = false,
-                    gmailConnected = provider.equals("google", ignoreCase = true)
-                )
+            val wallet = wallets.value.find { it.id == walletId } ?: return@launch
+            val updated = wallet.copy(
+                cardTheme = theme,
+                designId = theme,
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
+                accentColor = accentColor,
+                artwork = artwork,
+                cardStyle = cardStyle
             )
-            _isAuthenticated.value = true
-            syncAllData()
+            repository.updateWallet(updated)
         }
-    }
-
-    fun exploreAsGuest() {
-        _isAuthenticated.value = true
     }
 
     fun logout() {

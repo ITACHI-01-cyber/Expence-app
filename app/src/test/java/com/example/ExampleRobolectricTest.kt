@@ -28,12 +28,11 @@ class ExampleRobolectricTest {
   @Test
   fun `verify auth phase transitions`() {
     val phases = com.example.viewmodel.AuthPhase.values()
-    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.WELCOME_SPLASH))
-    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.LANDING))
     org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.LOGIN))
     org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.SIGNUP))
-    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.FORGOT_PASSWORD_EMAIL))
-    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.FORGOT_PASSWORD_OTP))
-    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.FORGOT_PASSWORD_NEW_PASS))
+    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.FORGOT_PASSWORD))
+    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.OTP_VERIFICATION))
+    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.CREATE_NEW_PASSWORD))
+    org.junit.Assert.assertTrue(phases.contains(com.example.viewmodel.AuthPhase.PASSWORD_RESET_SUCCESS))
   }
 }

@@ -16,7 +16,12 @@ data class WalletEntity(
     val balance: Double = 0.0,
     val primaryColor: String = "#1A1A2E",
     val secondaryColor: String = "#16213E",
-    val designId: String = "midnight"
+    val designId: String = "midnight",
+    val cardTheme: String = "midnight",
+    val accentColor: String = "#38BDF8",
+    val artwork: String = "waves",
+    val cardStyle: String = "illustrated", // "classic", "premium", "gradient", "illustrated", "glass", "neon", "minimal", "dark"
+    val layoutVariant: String = "classic"
 )
 
 @Entity(tableName = "transactions")
@@ -59,7 +64,7 @@ data class UserSettingsEntity(
     val email: String = "bhardwajvivek226@gmail.com",
     val currency: String = "₹",
     val currencyCode: String = "INR",
-    val theme: String = "light", // "light", "dark", "system"
+    val theme: String = "dark", // "dark", "light", "system"
     val accentColor: String = "purple", // "purple", "blue", "emerald", "rose"
     val isGuest: Boolean = true,
     val gmailConnected: Boolean = false

@@ -48,8 +48,9 @@ import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.WalletEntity
 import com.example.ui.components.BudgetProgressCard
-import com.example.ui.components.CardCarousel
 import com.example.ui.components.ExpenseStatsChart
+import com.example.ui.components.FintechBalanceHeader
+import com.example.ui.components.FintechDigitalCard
 import com.example.ui.components.MonthlyExpenseGrid
 import com.example.ui.components.RecentPayments
 import com.example.ui.components.SavingsGoalsSection
@@ -91,37 +92,36 @@ fun DashboardScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
-        // 1. Hero Financial Card (Warm Peach / Sand theme with Deep Blue CTA)
-        HeroFinancialBalanceCard(
+        // 1. TOTAL BALANCE & Income / Spent Indicators
+        FintechBalanceHeader(
             summary = summary,
-            currencySymbol = currencySymbol,
-            onAddTransactionClick = onAddTransactionClick
+            currencySymbol = currencySymbol
         )
 
-        // 2. Wallets & Cards Carousel (tactile slate purple cards with chip and live balance)
-        CardCarousel(
+        // 2. DIGITAL PAYMENT CARD & Card Actions ([Card Details] [Freeze Card] [More])
+        FintechDigitalCard(
             wallets = wallets,
             currencySymbol = currencySymbol,
             onAddCard = onAddCard,
             onTopUp = onTopUpCard
         )
 
-        // 3. Monthly Budget Progress Card & Income Limit
-        BudgetProgressCard(
-            summary = summary,
-            currencySymbol = currencySymbol,
-            onEditBudgetClick = onEditBudget
-        )
-
-        // 4. Recent Transactions List
+        // 3. PAYMENT / TRANSACTION HISTORY (Grouped by Today, Yesterday, Earlier)
         RecentPayments(
             transactions = recentTransactions,
             wallets = wallets,
             currencySymbol = currencySymbol,
             onViewAllClick = onViewAllTransactions,
             onTransactionClick = onTransactionClick
+        )
+
+        // 4. Monthly Budget Progress Card & Income Limit
+        BudgetProgressCard(
+            summary = summary,
+            currencySymbol = currencySymbol,
+            onEditBudgetClick = onEditBudget
         )
 
         // 5. Expense Statistics Trend Chart
@@ -149,7 +149,7 @@ fun DashboardScreen(
             onDeleteGoal = onDeleteGoal
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(100.dp)) // Extra padding so floating bottom nav doesn't obscure content
     }
 }
 

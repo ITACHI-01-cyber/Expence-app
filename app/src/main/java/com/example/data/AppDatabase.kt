@@ -18,7 +18,7 @@ import com.example.model.WalletEntity
         BudgetConfigEntity::class,
         UserSettingsEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -35,8 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expencetrack.db"
                 )
-                // "No Mock Data" Rule: Start with pristine empty tables.
-                // All core data is fetched live from the Render MongoDB backend upon user authentication.
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance

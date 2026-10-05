@@ -271,8 +271,9 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("light" to "Light", "dark" to "Dark", "system" to "System").forEach { (th, label) ->
-                            val isSel = current.theme == th
+                        listOf("dark" to "Dark", "light" to "Light", "system" to "System").forEach { (th, label) ->
+                            val activeTheme = current.theme.ifBlank { "dark" }
+                            val isSel = activeTheme.equals(th, ignoreCase = true)
                             Surface(
                                 onClick = {
                                     onUpdateSettings(current.name, current.email, current.currency, th, current.accentColor)

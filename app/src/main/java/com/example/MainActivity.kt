@@ -74,9 +74,9 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
     val accentColor = userSettings?.accentColor ?: "purple"
 
     val isDark = when (userSettings?.theme?.lowercase()) {
-        "dark" -> true
         "light" -> false
-        else -> isSystemInDarkTheme()
+        "system" -> isSystemInDarkTheme()
+        else -> true
     }
 
     // Modal dialog states
@@ -157,7 +157,10 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                                 onAddCard = { showAddWalletDialog = true },
                                 onTopUpCard = { topUpTargetWallet = it },
                                 onDeleteCard = { viewModel.deleteWallet(it) },
-                                onTransactionClick = { selectedTransactionToEdit = it }
+                                onTransactionClick = { selectedTransactionToEdit = it },
+                                onSaveCardCustomization = { walletId, theme, primaryColor, secondaryColor, accentColor, artwork, cardStyle ->
+                                    viewModel.updateCardCustomization(walletId, theme, primaryColor, secondaryColor, accentColor, artwork, cardStyle)
+                                }
                             )
 
                             ScreenTab.BUDGET -> BudgetPlannerScreen(

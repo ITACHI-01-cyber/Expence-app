@@ -1,7 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -25,27 +22,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.model.UserSettingsEntity
 import com.example.ui.theme.AppTheme
-import com.example.ui.theme.TextCrispWhite
 
 @Composable
 fun TopBar(
     userSettings: UserSettingsEntity?,
     isSyncing: Boolean = false,
     onSyncClick: () -> Unit = {},
-    onAddTransactionClick: () -> Unit,
+    onAddTransactionClick: () -> Unit = {},
     onProfileClick: () -> Unit,
+    onHelpClick: () -> Unit = {},
+    onNotificationsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = AppTheme.colors
+    val userName = userSettings?.name?.split(" ")?.firstOrNull() ?: "Vivek"
 
     Surface(
         color = colors.background,
@@ -55,91 +51,58 @@ fun TopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left Title with App Mascot Logo:
+            // Left: Circular User Avatar with Greeting
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(onClick = onProfileClick)
+                    .testTag("user_avatar_btn")
             ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = colors.surfaceContainer,
-                    border = BorderStroke(1.dp, colors.surfaceBorder),
-                    shadowElevation = 3.dp,
+                Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .testTag("app_home_logo")
+                        .clip(CircleShape)
+                        .background(colors.surfaceContainer)
+                        .padding(2.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.app_rabbit_logo),
-                        contentDescription = "Rack App Mascot Logo",
-                        contentScale = ContentScale.Crop,
+                    Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(3.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E293B)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (userName.isNotEmpty()) userName.take(1).uppercase() else "V",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
+                    }
                 }
 
                 Column {
                     Text(
-                        text = "Rack",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Hello,",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
                         color = colors.textMutedLavender,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.2.sp
                     )
-                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
-                        text = "Expense Tracker",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = TextCrispWhite,
-                        letterSpacing = (-0.4).sp
+                        text = userName,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textCrispWhite,
+                        letterSpacing = (-0.2).sp
                     )
-                }
-            }
-
-            // Right Actions: Avatar Bubble with Name
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Profile Avatar with Name Pill
-                Surface(
-                    onClick = onProfileClick,
-                    shape = RoundedCornerShape(18.dp),
-                    color = colors.surfaceContainer,
-                    border = BorderStroke(1.dp, colors.surfaceBorder),
-                    modifier = Modifier.testTag("user_avatar_btn")
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(colors.primaryAccent),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "🧔",
-                                fontSize = 15.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = userSettings?.name?.split(" ")?.firstOrNull() ?: "Vivek",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = colors.textMutedLavender
-                        )
-                    }
                 }
             }
         }

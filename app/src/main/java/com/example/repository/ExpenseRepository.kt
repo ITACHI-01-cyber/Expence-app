@@ -204,7 +204,11 @@ class ExpenseRepository(
                         balance = w.balance,
                         primaryColor = w.primaryColor ?: "#1A1A2E",
                         secondaryColor = w.secondaryColor ?: "#16213E",
-                        designId = w.designPreset ?: "dc-batman"
+                        designId = w.designPreset ?: "midnight",
+                        cardTheme = w.cardTheme ?: w.designPreset ?: "midnight",
+                        accentColor = w.accentColor ?: "#38BDF8",
+                        artwork = w.artwork ?: "waves",
+                        cardStyle = w.cardStyle ?: "illustrated"
                     )
                 }
                 // Safe merge: Never wipe locally created wallets
@@ -331,6 +335,23 @@ class ExpenseRepository(
 
     suspend fun updateWallet(wallet: WalletEntity) = withContext(Dispatchers.IO) {
         dao.updateWallet(wallet)
+        try {
+            if (!wallet.id.startsWith("local_")) {
+                apiService.updateCardCustomization(
+                    wallet.id,
+                    com.example.network.CardCustomizationRequest(
+                        cardTheme = wallet.cardTheme,
+                        primaryColor = wallet.primaryColor,
+                        secondaryColor = wallet.secondaryColor,
+                        accentColor = wallet.accentColor,
+                        artwork = wallet.artwork,
+                        cardStyle = wallet.cardStyle
+                    )
+                )
+            }
+        } catch (ignored: Exception) {
+            // Local Room database guarantees persistence
+        }
     }
 
     suspend fun deleteWallet(walletId: String) = withContext(Dispatchers.IO) {
@@ -537,6 +558,10 @@ class ExpenseRepository(
 
     suspend fun updateUserSettings(settings: UserSettingsEntity) = withContext(Dispatchers.IO) {
         dao.saveUserSettings(settings)
+    }
+
+    suspend fun getUserSettingsOnce(): UserSettingsEntity? = withContext(Dispatchers.IO) {
+        dao.getUserSettingsOnce()
     }
 
     suspend fun clearAllUserData() = withContext(Dispatchers.IO) {

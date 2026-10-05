@@ -121,8 +121,28 @@ data class ServerWallet(
     @Json(name = "designPreset") val designPreset: String? = null,
     @Json(name = "primaryColor") val primaryColor: String? = null,
     @Json(name = "secondaryColor") val secondaryColor: String? = null,
+    @Json(name = "accentColor") val accentColor: String? = null,
+    @Json(name = "cardTheme") val cardTheme: String? = null,
+    @Json(name = "artwork") val artwork: String? = null,
+    @Json(name = "cardStyle") val cardStyle: String? = null,
     @Json(name = "textColor") val textColor: String? = null,
     @Json(name = "cardIcon") val cardIcon: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CardCustomizationRequest(
+    @Json(name = "cardTheme") val cardTheme: String,
+    @Json(name = "primaryColor") val primaryColor: String,
+    @Json(name = "secondaryColor") val secondaryColor: String,
+    @Json(name = "accentColor") val accentColor: String,
+    @Json(name = "artwork") val artwork: String,
+    @Json(name = "cardStyle") val cardStyle: String
+)
+
+@JsonClass(generateAdapter = true)
+data class VerifyOtpRequest(
+    @Json(name = "email") val email: String,
+    @Json(name = "otp") val otp: String
 )
 
 @JsonClass(generateAdapter = true)

@@ -106,6 +106,9 @@ interface AppDao {
     @Query("SELECT * FROM user_settings WHERE id = 1 LIMIT 1")
     fun getUserSettings(): Flow<UserSettingsEntity?>
 
+    @Query("SELECT * FROM user_settings WHERE id = 1 LIMIT 1")
+    suspend fun getUserSettingsOnce(): UserSettingsEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUserSettings(settings: UserSettingsEntity)
 }
