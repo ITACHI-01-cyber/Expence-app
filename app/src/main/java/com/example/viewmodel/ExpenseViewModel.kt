@@ -18,6 +18,7 @@ import com.example.network.NetworkClient
 import com.example.network.RegisterRequest
 import com.example.network.ResetPasswordRequest
 import com.example.network.TokenManager
+import com.example.network.VerifyOtpRequest
 import com.example.repository.ExpenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -87,24 +91,25 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
-    private val _serverConnected = MutableStateFlow(true)
+    private val _serverConnected = MutableStateFlow(false)
     val serverConnected: StateFlow<Boolean> = _serverConnected.asStateFlow()
 
-    // Forgot Password & OTP State
-    private val _otpEmail = MutableStateFlow("bhardwajvivek226@gmail.com")
-    val otpEmail: StateFlow<String> = _otpEmail.asStateFlow()
+    private val _operationErrorMessage = MutableStateFlow<String?>(null)
+    val operationErrorMessage: StateFlow<String?> = _operationErrorMessage.asStateFlow()
 
-    private val _activeOtpCode = MutableStateFlow("748192")
-    val activeOtpCode: StateFlow<String> = _activeOtpCode.asStateFlow()
+    // Forgot Password & OTP State
+    private val _otpEmail = MutableStateFlow("")
+    val otpEmail: StateFlow<String> = _otpEmail.asStateFlow()
 
     private val _otpCooldown = MutableStateFlow(45)
     val otpCooldown: StateFlow<Int> = _otpCooldown.asStateFlow()
 
-    private val _otpAttemptCount = MutableStateFlow(0)
-    val otpAttemptCount: StateFlow<Int> = _otpAttemptCount.asStateFlow()
-
     private val _gmailNotificationBanner = MutableStateFlow<String?>(null)
     val gmailNotificationBanner: StateFlow<String?> = _gmailNotificationBanner.asStateFlow()
+
+    private var pendingRegistration: RegisterRequest? = null
+    private var isRegistrationOtpFlow = false
+    private var pendingResetCode: String? = null
 
     // Active Navigation Tab
     private val _currentTab = MutableStateFlow(ScreenTab.DASHBOARD)
@@ -130,7 +135,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // Check if user has an existing saved session
+        // Restore the backend session and refresh its cache.
         val savedToken = TokenManager.getToken()
         if (!savedToken.isNullOrBlank()) {
             _serverToken.value = savedToken
@@ -141,7 +146,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             val savedEmail = TokenManager.getUserEmail()
             if (!savedName.isNullOrBlank() || !savedEmail.isNullOrBlank()) {
                 viewModelScope.launch {
-                    val current = repository.userSettings
                     repository.updateUserSettings(
                         UserSettingsEntity(
                             id = 1,
@@ -201,14 +205,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val totalWalletBalance = walletList.sumOf { it.balance }
-        val incomeVal = if (config != null && config.monthlyIncome > 0) config.monthlyIncome else monthIncome
-        val limitVal = config?.budgetLimit ?: 35000.0
+        val incomeVal = config?.monthlyIncome ?: monthIncome
+        val limitVal = config?.budgetLimit ?: 0.0
 
         DashboardSummary(
             monthlyIncome = incomeVal,
             monthlyBudgetLimit = limitVal,
-            monthlySpent = monthSpent,
-            availableBalance = totalWalletBalance
+            monthlySpent = config?.monthlySpent ?: monthSpent,
+            availableBalance = config?.availableBalance ?: totalWalletBalance
         )
     }.stateIn(
         viewModelScope,
@@ -340,9 +344,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val results = repository.runCrudDiagnostics()
                 _apiTestResults.value = results
-                _serverConnected.value = results.any { it.isSuccess && it.statusCode == 200 }
-            } catch (e: Exception) {
-                // Keep safe state
+                _serverConnected.value = results.any { it.isSuccess }
             } finally {
                 _isRunningApiTests.value = false
             }
@@ -355,10 +357,46 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val res = repository.syncAllFromServer()
                 _serverConnected.value = res.isSuccess
-            } catch (e: Exception) {
-                _serverConnected.value = false
+                if (res.isFailure) {
+                    val error = res.exceptionOrNull()
+                    if (error != null) reportOperationError(error)
+                    else _operationErrorMessage.value = "Could not refresh data from the backend."
+                } else {
+                    _operationErrorMessage.value = null
+                }
             } finally {
                 _isSyncing.value = false
+            }
+        }
+    }
+
+    fun clearOperationError() {
+        _operationErrorMessage.value = null
+    }
+
+    private fun reportOperationError(error: Throwable) {
+        if (error.localizedMessage?.contains("session has expired", ignoreCase = true) == true) {
+            _isAuthenticated.value = false
+            _serverToken.value = null
+            _authPhase.value = AuthPhase.LOGIN
+            _authErrorMessage.value = "Your session has expired. Please sign in again."
+            TokenManager.clear()
+            viewModelScope.launch { repository.clearAllUserData() }
+        }
+        _operationErrorMessage.value = when (error) {
+            is SocketTimeoutException -> "The backend took too long to respond. Please try again."
+            is UnknownHostException, is IOException -> "No internet connection or the backend is unavailable."
+            else -> error.localizedMessage ?: "The request failed. Please try again."
+        }
+    }
+
+    private fun runRepositoryOperation(operation: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                operation()
+                _operationErrorMessage.value = null
+            } catch (error: Exception) {
+                reportOperationError(error)
             }
         }
     }
@@ -405,95 +443,43 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
 
             try {
-                // Call live Render backend: POST /api/auth/login
                 val response = NetworkClient.apiService.login(
-                    LoginRequest(
-                        identifier = targetIdentifier,
-                        password = pass
-                    )
+                    LoginRequest(identifier = targetIdentifier, password = pass)
                 )
-
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
-                    val loginData = body.data
-                    val jwt = loginData?.token ?: body.token
-
-                    if (!jwt.isNullOrBlank()) {
-                        _serverToken.value = jwt
-                        if (rememberMe) {
-                            TokenManager.saveToken(jwt)
-                        }
-
-                        // Fetch real user profile from /api/auth/me
-                        val profile = try {
-                            val pResp = NetworkClient.apiService.getProfile()
-                            if (pResp.isSuccessful) pResp.body()?.data else null
-                        } catch (e: Exception) {
-                            null
-                        }
-
-                        val userName = profile?.name ?: profile?.username ?: loginData?.name ?: loginData?.username
-                            ?: targetIdentifier.substringBefore("@")
-                        val userEmail = profile?.email ?: loginData?.email ?: if (targetIdentifier.contains("@")) targetIdentifier else ""
-                        val userId = profile?.mongoId ?: profile?.id ?: loginData?.mongoId ?: loginData?.id
-
-                        TokenManager.saveUserInfo(userId, userName, userEmail)
-
-                        val currentSettings = userSettings.value ?: UserSettingsEntity()
-                        repository.updateUserSettings(
-                            currentSettings.copy(
-                                name = userName,
-                                email = userEmail,
-                                currency = loginData?.currency ?: "₹",
-                                theme = loginData?.theme ?: "system",
-                                isGuest = false
-                            )
-                        )
-
-                        // Safe sync: Merge user data without destroying local records
-                        syncAllData()
-
-                        _serverConnected.value = true
-                        _isAuthenticated.value = true
-                    } else {
-                        _authErrorMessage.value = body.message ?: "Authentication succeeded but no token was provided."
-                    }
+                val body = response.body()
+                val loginData = body?.data
+                if (response.isSuccessful && body?.success == true && loginData != null) {
+                    establishSession(loginData, targetIdentifier)
                 } else {
-                    // Per security rules: never reveal whether username exists
-                    _authErrorMessage.value = "Invalid username or password."
-                }
-            } catch (e: Exception) {
-                // If offline or Render backend is sleeping/unreachable, log in locally with this user
-                val currentSettings = userSettings.value
-                val cleanEmail = if (targetIdentifier.contains("@")) targetIdentifier else (currentSettings?.email ?: "user@example.com")
-                val cleanName = if (targetIdentifier.contains("@")) targetIdentifier.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() } else targetIdentifier
-                val curr = currentSettings ?: UserSettingsEntity()
-                repository.updateUserSettings(
-                    curr.copy(
-                        name = if (curr.name.isNotBlank() && targetIdentifier.equals(curr.email, ignoreCase = true)) curr.name else cleanName,
-                        email = cleanEmail,
-                        isGuest = false,
-                        currency = "₹",
-                        currencyCode = "INR"
+                    _authErrorMessage.value = apiResponseError(
+                        response.code(),
+                        body?.message,
+                        response.errorBody()?.string()
                     )
-                )
-                TokenManager.saveUserInfo("local_${System.currentTimeMillis()}", cleanName, cleanEmail)
-                _isAuthenticated.value = true
+                }
+            } catch (error: Exception) {
+                _authErrorMessage.value = networkError(error)
             } finally {
                 _isAuthenticating.value = false
             }
         }
     }
 
-    fun signupUser(username: String, email: String, pass: String, confirmPass: String) {
+    fun signupUser(name: String, username: String, email: String, pass: String, confirmPass: String) {
         viewModelScope.launch {
             _isAuthenticating.value = true
             _authErrorMessage.value = null
             _authSuccessMessage.value = null
 
+            val cleanName = name.trim()
             val cleanUsername = username.trim()
             val cleanEmail = email.trim()
 
+            if (cleanName.isBlank()) {
+                _authErrorMessage.value = "Name is required."
+                _isAuthenticating.value = false
+                return@launch
+            }
             if (cleanUsername.isBlank()) {
                 _authErrorMessage.value = "Username is required."
                 _isAuthenticating.value = false
@@ -516,37 +502,32 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
 
             try {
-                val req = RegisterRequest(name = cleanUsername, email = cleanEmail, password = pass)
-                var response = NetworkClient.apiService.register(req)
-                if (response.code() == 404) {
-                    response = NetworkClient.apiService.signup(req)
-                }
-
-                if (response.isSuccessful && response.body() != null) {
-                    _authSuccessMessage.value = "Account created successfully! Please sign in."
-                    _authPhase.value = AuthPhase.LOGIN
-                } else if (response.code() == 409 || response.code() == 400) {
-                    val errorString = response.errorBody()?.string()
-                    val parsedMsg = try {
-                        if (!errorString.isNullOrBlank()) {
-                            val json = JSONObject(errorString)
-                            json.optString("message", json.optString("error", "Username or email already exists."))
-                        } else {
-                            "Username or email already exists."
-                        }
-                    } catch (e: Exception) {
-                        "Username or email already exists."
-                    }
-                    _authErrorMessage.value = parsedMsg
+                val request = RegisterRequest(
+                    name = cleanName,
+                    username = cleanUsername,
+                    email = cleanEmail,
+                    password = pass
+                )
+                val response = NetworkClient.apiService.sendRegistrationOtp(request)
+                val body = response.body()
+                if (response.isSuccessful && body?.success == true) {
+                    pendingRegistration = request
+                    isRegistrationOtpFlow = true
+                    pendingResetCode = null
+                    _otpEmail.value = cleanEmail
+                    _otpCooldown.value = 0
+                    startOtpCooldown()
+                    _authSuccessMessage.value = "Verification code sent. Check your email."
+                    _authPhase.value = AuthPhase.OTP_VERIFICATION
                 } else {
-                    // Registration succeeded fallback
-                    _authSuccessMessage.value = "Account created successfully! Please sign in."
-                    _authPhase.value = AuthPhase.LOGIN
+                    _authErrorMessage.value = apiResponseError(
+                        response.code(),
+                        body?.message,
+                        response.errorBody()?.string()
+                    )
                 }
-            } catch (e: Exception) {
-                // Offline fallback
-                _authSuccessMessage.value = "Account created successfully! Please sign in."
-                _authPhase.value = AuthPhase.LOGIN
+            } catch (error: Exception) {
+                _authErrorMessage.value = networkError(error)
             } finally {
                 _isAuthenticating.value = false
             }
@@ -566,54 +547,96 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            _otpEmail.value = target
-            val randomOtp = (100000..999999).random().toString()
-            _activeOtpCode.value = randomOtp
-            _otpAttemptCount.value = 0
-            startOtpCooldown()
-
             try {
-                NetworkClient.apiService.forgotPassword(ForgotPasswordRequest(email = target))
-            } catch (ignored: Exception) {}
-
-            _isAuthenticating.value = false
-            _authPhase.value = AuthPhase.OTP_VERIFICATION
+                val response = NetworkClient.apiService.requestPasswordReset(ForgotPasswordRequest(email = target))
+                val body = response.body()
+                if (response.isSuccessful && body?.success == true) {
+                    pendingRegistration = null
+                    isRegistrationOtpFlow = false
+                    pendingResetCode = null
+                    _otpEmail.value = target
+                    startOtpCooldown()
+                    _authSuccessMessage.value = body.message ?: "Verification code sent. Check your email."
+                    _authPhase.value = AuthPhase.OTP_VERIFICATION
+                } else {
+                    _authErrorMessage.value = apiResponseError(
+                        response.code(),
+                        body?.message,
+                        response.errorBody()?.string()
+                    )
+                }
+            } catch (error: Exception) {
+                _authErrorMessage.value = networkError(error)
+            } finally {
+                _isAuthenticating.value = false
+            }
         }
     }
 
     fun resendOtp() {
         if (_otpCooldown.value > 0) return
         viewModelScope.launch {
-            val randomOtp = (100000..999999).random().toString()
-            _activeOtpCode.value = randomOtp
-            _otpAttemptCount.value = 0
-            startOtpCooldown()
             try {
-                NetworkClient.apiService.forgotPassword(ForgotPasswordRequest(email = _otpEmail.value))
-            } catch (ignored: Exception) {}
+                val response = if (isRegistrationOtpFlow) {
+                    val registration = pendingRegistration
+                        ?: throw IllegalStateException("Registration details are no longer available. Please sign up again.")
+                    NetworkClient.apiService.sendRegistrationOtp(registration)
+                } else {
+                    NetworkClient.apiService.requestPasswordReset(ForgotPasswordRequest(email = _otpEmail.value))
+                }
+                val body = response.body()
+                if (response.isSuccessful && body?.success == true) {
+                    startOtpCooldown()
+                    _authErrorMessage.value = null
+                    _authSuccessMessage.value = body.message ?: "A new verification code was sent."
+                } else {
+                    _authErrorMessage.value = apiResponseError(
+                        response.code(),
+                        body?.message,
+                        response.errorBody()?.string()
+                    )
+                }
+            } catch (error: Exception) {
+                _authErrorMessage.value = networkError(error)
+            }
         }
     }
 
-    fun verifyOtpCode(enteredOtp: String): Boolean {
+    fun verifyOtpCode(enteredOtp: String) {
         val clean = enteredOtp.trim()
         if (clean.length != 6) {
             _authErrorMessage.value = "Please enter the complete 6-digit code."
-            return false
-        }
-        _otpAttemptCount.value += 1
-        if (_otpAttemptCount.value > 5) {
-            _authErrorMessage.value = "Too many attempts. Please request a new code."
-            return false
+            return
         }
 
-        val isValid = clean == _activeOtpCode.value || clean == "123456" || clean == "748192"
-        return if (isValid) {
+        if (isRegistrationOtpFlow) {
+            viewModelScope.launch {
+                _isAuthenticating.value = true
+                try {
+                    val response = NetworkClient.apiService.verifyRegistrationOtp(
+                        VerifyOtpRequest(email = _otpEmail.value, code = clean)
+                    )
+                    val body = response.body()
+                    val loginData = body?.data
+                    if (response.isSuccessful && body?.success == true && loginData != null) {
+                        establishSession(loginData, _otpEmail.value)
+                    } else {
+                        _authErrorMessage.value = apiResponseError(
+                            response.code(),
+                            body?.message,
+                            response.errorBody()?.string()
+                        )
+                    }
+                } catch (error: Exception) {
+                    _authErrorMessage.value = networkError(error)
+                } finally {
+                    _isAuthenticating.value = false
+                }
+            }
+        } else {
+            pendingResetCode = clean
             _authErrorMessage.value = null
             _authPhase.value = AuthPhase.CREATE_NEW_PASSWORD
-            true
-        } else {
-            _authErrorMessage.value = "Invalid verification code. Please check and try again."
-            false
         }
     }
 
@@ -633,25 +656,126 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
+            val resetCode = pendingResetCode
+            if (resetCode.isNullOrBlank()) {
+                _authErrorMessage.value = "Enter the verification code sent to your email."
+                _isAuthenticating.value = false
+                _authPhase.value = AuthPhase.OTP_VERIFICATION
+                return@launch
+            }
+
             try {
-                NetworkClient.apiService.resetPassword(
+                val response = NetworkClient.apiService.resetPassword(
                     ResetPasswordRequest(
                         email = _otpEmail.value,
-                        code = _activeOtpCode.value,
-                        token = _activeOtpCode.value,
+                        code = resetCode,
                         newPassword = newPass
                     )
                 )
-            } catch (ignored: Exception) {}
-
-            _isAuthenticating.value = false
-            _authPhase.value = AuthPhase.PASSWORD_RESET_SUCCESS
+                val body = response.body()
+                if (response.isSuccessful && body?.success == true) {
+                    pendingResetCode = null
+                    _authSuccessMessage.value = body.message ?: "Password updated. You can now sign in."
+                    _authPhase.value = AuthPhase.PASSWORD_RESET_SUCCESS
+                } else {
+                    _authErrorMessage.value = apiResponseError(
+                        response.code(),
+                        body?.message,
+                        response.errorBody()?.string()
+                    )
+                }
+            } catch (error: Exception) {
+                _authErrorMessage.value = networkError(error)
+            } finally {
+                _isAuthenticating.value = false
+            }
         }
     }
 
     fun returnToLoginFromReset() {
+        pendingResetCode = null
         _authPhase.value = AuthPhase.LOGIN
         _authSuccessMessage.value = "Password updated! You can now sign in."
+    }
+
+    private suspend fun establishSession(loginData: com.example.network.LoginData, identifier: String) {
+        val token = loginData.token?.takeIf(String::isNotBlank)
+            ?: throw IllegalStateException("The backend did not return an authentication token.")
+        TokenManager.saveToken(token)
+        _serverToken.value = token
+        repository.clearAllUserData()
+
+        val name = loginData.name ?: loginData.username ?: identifier.substringBefore("@")
+        val email = loginData.email ?: identifier.takeIf { it.contains("@") }.orEmpty()
+        val currencyCode = when (loginData.currency?.uppercase()) {
+            "USD", "$" -> "USD"
+            "EUR", "€" -> "EUR"
+            "GBP", "£" -> "GBP"
+            "JPY", "¥" -> "JPY"
+            else -> "INR"
+        }
+        val currencySymbol = when (currencyCode) {
+            "USD" -> "$"
+            "EUR" -> "€"
+            "GBP" -> "£"
+            "JPY" -> "¥"
+            else -> "₹"
+        }
+        TokenManager.saveUserInfo(loginData.mongoId ?: loginData.id, name, email)
+        repository.updateUserSettings(
+            UserSettingsEntity(
+                id = 1,
+                name = name,
+                email = email,
+                currency = currencySymbol,
+                currencyCode = currencyCode,
+                theme = "dark",
+                accentColor = loginData.accentColor ?: "purple",
+                isGuest = false,
+                gmailConnected = loginData.gmailConnected ?: false
+            )
+        )
+        pendingRegistration = null
+        isRegistrationOtpFlow = false
+        _authErrorMessage.value = null
+        _authSuccessMessage.value = null
+        _isAuthenticated.value = true
+        syncAllData()
+    }
+
+    private fun apiResponseError(code: Int, message: String?, errorBody: String?): String {
+        if (!message.isNullOrBlank()) return message
+        if (!errorBody.isNullOrBlank()) {
+            val parsed = try {
+                val json = JSONObject(errorBody)
+                json.optString("message").ifBlank { json.optString("error") }
+            } catch (_: Exception) {
+                ""
+            }
+            if (parsed.isNotBlank()) return parsed
+        }
+        return when (code) {
+            400 -> "The server rejected the request. Check the entered details."
+            401 -> "Invalid credentials or your session has expired."
+            403 -> "This action is not allowed for your account."
+            404 -> "The requested service was not found."
+            in 500..599 -> "The backend is temporarily unavailable. Please try again."
+            else -> "Request failed (HTTP $code). Please try again."
+        }
+    }
+
+    private fun networkError(error: Throwable): String = when (error) {
+        is SocketTimeoutException -> "The backend took too long to respond. Please try again."
+        is UnknownHostException, is IOException -> "No internet connection or the backend is unavailable."
+        else -> error.localizedMessage ?: "The request failed. Please try again."
+    }
+
+    private fun currencyCodeForSymbol(symbol: String): String = when (symbol) {
+        "$" -> "USD"
+        "€" -> "EUR"
+        "£" -> "GBP"
+        "¥" -> "JPY"
+        else -> "INR"
     }
 
     fun updateCardCustomization(
@@ -663,18 +787,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         artwork: String,
         cardStyle: String
     ) {
-        viewModelScope.launch {
-            val wallet = wallets.value.find { it.id == walletId } ?: return@launch
-            val updated = wallet.copy(
-                cardTheme = theme,
-                designId = theme,
-                primaryColor = primaryColor,
-                secondaryColor = secondaryColor,
-                accentColor = accentColor,
-                artwork = artwork,
-                cardStyle = cardStyle
-            )
-            repository.updateWallet(updated)
+        runRepositoryOperation {
+            wallets.value.find { it.id == walletId }?.let { wallet ->
+                val updated = wallet.copy(
+                    cardTheme = theme,
+                    designId = theme,
+                    primaryColor = primaryColor,
+                    secondaryColor = secondaryColor,
+                    accentColor = accentColor,
+                    artwork = artwork,
+                    cardStyle = cardStyle
+                )
+                repository.updateWallet(updated)
+            }
         }
     }
 
@@ -682,40 +807,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         _isAuthenticated.value = false
         _serverToken.value = null
         TokenManager.clear()
+        pendingRegistration = null
+        isRegistrationOtpFlow = false
+        pendingResetCode = null
         _authPhase.value = AuthPhase.LOGIN
-    }
-
-    fun addNewUser(name: String, email: String, currency: String = "₹") {
         viewModelScope.launch {
-            val cleanName = name.trim().ifBlank { "User" }
-            val cleanEmail = email.trim().ifBlank { "user@example.com" }
-            val current = userSettings.value ?: UserSettingsEntity()
-            repository.updateUserSettings(
-                current.copy(
-                    name = cleanName,
-                    email = cleanEmail,
-                    currency = currency,
-                    currencyCode = if (currency == "₹") "INR" else "USD",
-                    isGuest = false
-                )
-            )
-            // Add initial wallet for new user if no wallets present
-            if (wallets.value.isEmpty()) {
-                repository.addWallet(
-                    WalletEntity(
-                        bankName = "Primary Account",
-                        cardType = "debit",
-                        cardBrand = "RuPay",
-                        cardNumber = "•••• " + (1000..9999).random().toString(),
-                        cardHolderName = cleanName,
-                        balance = 10000.0,
-                        primaryColor = "#1D1427",
-                        secondaryColor = "#3B2E58"
-                    )
-                )
-            }
-            TokenManager.saveUserInfo("local_${System.currentTimeMillis()}", cleanName, cleanEmail)
-            _isAuthenticated.value = true
+            repository.clearAllUserData()
         }
     }
 
@@ -730,13 +827,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         theme: String,
         accentColor: String
     ) {
-        viewModelScope.launch {
+        runRepositoryOperation {
             val current = userSettings.value ?: UserSettingsEntity()
-            repository.updateUserSettings(
+            repository.saveUserSettings(
                 current.copy(
                     name = name,
                     email = email,
                     currency = currency,
+                    currencyCode = currencyCodeForSymbol(currency),
                     theme = theme,
                     accentColor = accentColor
                 )
@@ -757,7 +855,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         isRecurring: Boolean,
         walletId: String
     ) {
-        viewModelScope.launch {
+        runRepositoryOperation {
             val newTx = TransactionEntity(
                 type = type,
                 amount = amount,
@@ -773,15 +871,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateTransaction(transaction: TransactionEntity) {
-        viewModelScope.launch {
-            repository.updateTransaction(transaction)
-        }
+        runRepositoryOperation { repository.updateTransaction(transaction) }
     }
 
     fun deleteTransaction(id: String) {
-        viewModelScope.launch {
-            repository.deleteTransaction(id)
-        }
+        runRepositoryOperation { repository.deleteTransaction(id) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -800,7 +894,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         primaryColor: String,
         secondaryColor: String
     ) {
-        viewModelScope.launch {
+        runRepositoryOperation {
             repository.addWallet(
                 WalletEntity(
                     bankName = bankName,
@@ -819,15 +913,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun topUpWallet(walletId: String, amount: Double) {
-        viewModelScope.launch {
-            repository.topUpWallet(walletId, amount)
-        }
+        runRepositoryOperation { repository.topUpWallet(walletId, amount) }
     }
 
     fun deleteWallet(walletId: String) {
-        viewModelScope.launch {
-            repository.deleteWallet(walletId)
-        }
+        runRepositoryOperation { repository.deleteWallet(walletId) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -835,13 +925,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     // ─────────────────────────────────────────────────────────────────────────
 
     fun updateBudgetConfig(income: Double, limit: Double) {
-        viewModelScope.launch {
-            repository.updateBudgetConfig(income, limit)
-        }
+        runRepositoryOperation { repository.updateBudgetConfig(income, limit) }
     }
 
     fun addGoal(title: String, amount: Double, medium: String) {
-        viewModelScope.launch {
+        runRepositoryOperation {
             val now = Calendar.getInstance()
             repository.addGoal(
                 SavingsGoalEntity(
@@ -857,21 +945,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateGoal(goal: SavingsGoalEntity) {
-        viewModelScope.launch {
-            repository.updateGoal(goal)
-        }
+        runRepositoryOperation { repository.updateGoal(goal) }
     }
 
     fun toggleGoal(goalId: String, completed: Boolean) {
-        viewModelScope.launch {
-            repository.toggleGoalStatus(goalId, completed)
-        }
+        runRepositoryOperation { repository.toggleGoalStatus(goalId, completed) }
     }
 
     fun deleteGoal(goalId: String) {
-        viewModelScope.launch {
-            repository.deleteGoal(goalId)
-        }
+        runRepositoryOperation { repository.deleteGoal(goalId) }
     }
 
     fun updateBudgetLimits(income: Double, limit: Double) {
@@ -885,10 +967,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun resetDemoData() {
-        viewModelScope.launch {
-            repository.clearAllUserData()
-            syncAllData()
-        }
+        syncAllData()
     }
 
     fun fetchExpensesFromServer(token: String? = null) {

@@ -12,6 +12,7 @@ data class LoginRequest(
 @JsonClass(generateAdapter = true)
 data class RegisterRequest(
     @Json(name = "name") val name: String,
+    @Json(name = "username") val username: String,
     @Json(name = "email") val email: String,
     @Json(name = "password") val password: String
 )
@@ -22,10 +23,28 @@ data class ForgotPasswordRequest(
 )
 
 @JsonClass(generateAdapter = true)
+data class ForgotUsernameRequest(
+    @Json(name = "email") val email: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ChangeUsernameByOtpRequest(
+    @Json(name = "email") val email: String,
+    @Json(name = "code") val code: String,
+    @Json(name = "newUsername") val newUsername: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ChangeUsernameByPasswordRequest(
+    @Json(name = "email") val email: String,
+    @Json(name = "password") val password: String,
+    @Json(name = "newUsername") val newUsername: String
+)
+
+@JsonClass(generateAdapter = true)
 data class ResetPasswordRequest(
     @Json(name = "email") val email: String,
-    @Json(name = "code") val code: String? = null,
-    @Json(name = "token") val token: String? = null,
+    @Json(name = "code") val code: String,
     @Json(name = "newPassword") val newPassword: String
 )
 
@@ -34,8 +53,7 @@ data class ApiResponse<T>(
     @Json(name = "success") val success: Boolean = false,
     @Json(name = "status") val status: String? = null,
     @Json(name = "message") val message: String? = null,
-    @Json(name = "data") val data: T? = null,
-    @Json(name = "token") val token: String? = null
+    @Json(name = "data") val data: T? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -58,7 +76,8 @@ data class UserProfile(
     @Json(name = "_id") val mongoId: String? = null,
     @Json(name = "name") val name: String? = null,
     @Json(name = "username") val username: String? = null,
-    @Json(name = "email") val email: String? = null
+    @Json(name = "email") val email: String? = null,
+    @Json(name = "profilePicture") val profilePicture: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -121,12 +140,10 @@ data class ServerWallet(
     @Json(name = "designPreset") val designPreset: String? = null,
     @Json(name = "primaryColor") val primaryColor: String? = null,
     @Json(name = "secondaryColor") val secondaryColor: String? = null,
-    @Json(name = "accentColor") val accentColor: String? = null,
-    @Json(name = "cardTheme") val cardTheme: String? = null,
-    @Json(name = "artwork") val artwork: String? = null,
-    @Json(name = "cardStyle") val cardStyle: String? = null,
     @Json(name = "textColor") val textColor: String? = null,
-    @Json(name = "cardIcon") val cardIcon: String? = null
+    @Json(name = "cardIcon") val cardIcon: String? = null,
+    @Json(name = "backSignatureText") val backSignatureText: String? = null,
+    @Json(name = "backContactInfo") val backContactInfo: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -142,12 +159,22 @@ data class CardCustomizationRequest(
 @JsonClass(generateAdapter = true)
 data class VerifyOtpRequest(
     @Json(name = "email") val email: String,
-    @Json(name = "otp") val otp: String
+    @Json(name = "code") val code: String
 )
 
 @JsonClass(generateAdapter = true)
-data class TopUpWalletRequest(
-    @Json(name = "amount") val amount: Double
+data class VerifyLoginOtpRequest(
+    @Json(name = "otp") val otp: String,
+    @Json(name = "email") val email: String
+)
+
+@JsonClass(generateAdapter = true)
+data class UserSettingsRequest(
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "profilePicture") val profilePicture: String? = null,
+    @Json(name = "accentColor") val accentColor: String? = null,
+    @Json(name = "currency") val currency: String? = null,
+    @Json(name = "gmailConnected") val gmailConnected: Boolean? = null
 )
 
 @JsonClass(generateAdapter = true)

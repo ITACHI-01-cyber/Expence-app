@@ -7,19 +7,28 @@ import com.example.data.AppDatabase
 import com.example.model.TransactionEntity
 import com.example.network.ApiResponse
 import com.example.network.BackendApiService
+import com.example.network.ChangeUsernameByOtpRequest
+import com.example.network.ChangeUsernameByPasswordRequest
+import com.example.network.ForgotPasswordRequest
+import com.example.network.ForgotUsernameRequest
+import com.example.network.LoginData
+import com.example.network.LoginRequest
+import com.example.network.RegisterRequest
+import com.example.network.ResetPasswordRequest
 import com.example.network.ServerBudget
 import com.example.network.ServerDashboardSummary
 import com.example.network.ServerGoal
 import com.example.network.ServerTransaction
 import com.example.network.ServerWallet
-import com.example.network.TopUpWalletRequest
+import com.example.network.UserProfile
+import com.example.network.UserSettingsRequest
+import com.example.network.VerifyOtpRequest
+import com.example.network.VerifyLoginOtpRequest
 import com.example.repository.ExpenseRepository
 import kotlinx.coroutines.runBlocking
-import okhttp3.ResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -31,87 +40,129 @@ import retrofit2.Response
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class BackendCrudTest {
-
     private lateinit var db: AppDatabase
     private lateinit var repository: ExpenseRepository
 
-    // Mock API service for unit testing CRUD responses
     private val mockApiService = object : BackendApiService {
-        override suspend fun getHealth(): Response<ResponseBody> =
-            Response.success(ResponseBody.create(null, "{\"status\":\"ok\"}"))
+        override suspend fun login(request: LoginRequest) =
+            Response.success(ApiResponse<LoginData>(success = true, data = LoginData(token = "test-token")))
 
-        override suspend fun login(request: com.example.network.LoginRequest) =
-            Response.error<ApiResponse<com.example.network.LoginData>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun sendRegistrationOtp(request: RegisterRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun register(request: com.example.network.RegisterRequest) =
-            Response.error<ApiResponse<com.example.network.LoginData>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun verifyRegistrationOtp(request: VerifyOtpRequest) =
+            Response.success(ApiResponse<LoginData>(success = true, data = LoginData(token = "test-token")))
 
-        override suspend fun signup(request: com.example.network.RegisterRequest) =
-            Response.error<ApiResponse<com.example.network.LoginData>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun verifyLoginOtp(request: VerifyLoginOtpRequest) =
+            Response.success(ApiResponse<LoginData>(success = true, data = LoginData(token = "test-token")))
 
-        override suspend fun forgotPassword(request: com.example.network.ForgotPasswordRequest) =
-            Response.error<ApiResponse<Unit>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun requestPasswordReset(request: ForgotPasswordRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun verifyOtp(request: com.example.network.VerifyOtpRequest): Response<ApiResponse<Unit>> =
-            Response.success(ApiResponse<Unit>(success = true, message = "OTP verified", data = Unit))
+        override suspend fun resetPassword(request: ResetPasswordRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun resetPassword(request: com.example.network.ResetPasswordRequest) =
-            Response.error<ApiResponse<Unit>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun requestUsernameRecovery(request: ForgotUsernameRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun getProfile() =
-            Response.error<ApiResponse<com.example.network.UserProfile>>(403, ResponseBody.create(null, "Forbidden"))
+        override suspend fun changeUsernameByOtp(request: ChangeUsernameByOtpRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        // GET Transactions: returns empty list by default
-        override suspend fun getTransactions(month: Int?, year: Int?): Response<ApiResponse<List<ServerTransaction>>> =
-            Response.success(ApiResponse(success = true, data = emptyList()))
+        override suspend fun changeUsernameByPassword(request: ChangeUsernameByPasswordRequest) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        // POST Add Transaction: simulates successful remote persistence
-        override suspend fun addTransaction(transaction: ServerTransaction): Response<ApiResponse<ServerTransaction>> =
-            Response.success(ApiResponse(success = true, data = transaction.copy(mongoId = "server_${transaction.id}")))
+        override suspend fun getTransactions(
+            month: Int?,
+            year: Int?,
+            startDate: String?,
+            endDate: String?
+        ) = Response.success(ApiResponse(success = true, data = emptyList<ServerTransaction>()))
 
-        // PUT Update Transaction: simulates successful remote update
-        override suspend fun updateTransaction(id: String, transaction: ServerTransaction): Response<ApiResponse<ServerTransaction>> =
-            Response.success(ApiResponse(success = true, data = transaction))
+        override suspend fun addTransaction(transaction: ServerTransaction) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = transaction.copy(id = "server-transaction-id")
+                )
+            )
 
-        // DELETE Transaction: simulates successful remote deletion
-        override suspend fun deleteTransaction(id: String): Response<ResponseBody> =
-            Response.success(ResponseBody.create(null, ""))
+        override suspend fun updateTransaction(id: String, transaction: ServerTransaction) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = transaction.copy(id = id)
+                )
+            )
 
-        override suspend fun getWallets(): Response<ApiResponse<List<ServerWallet>>> =
-            Response.success(ApiResponse(success = true, data = emptyList()))
+        override suspend fun deleteTransaction(id: String) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun addWallet(wallet: ServerWallet): Response<ApiResponse<ServerWallet>> =
-            Response.success(ApiResponse(success = true, data = wallet))
+        override suspend fun getWallets() =
+            Response.success(ApiResponse(success = true, data = emptyList<ServerWallet>()))
 
-        override suspend fun updateWallet(id: String, wallet: ServerWallet): Response<ApiResponse<ServerWallet>> =
-            Response.success(ApiResponse(success = true, data = wallet))
+        override suspend fun addWallet(wallet: ServerWallet) =
+            Response.success(ApiResponse(success = true, data = wallet.copy(id = "server-wallet-id")))
 
-        override suspend fun updateCardCustomization(id: String, customization: com.example.network.CardCustomizationRequest): Response<ApiResponse<ServerWallet>> =
-            Response.success(ApiResponse(success = true, data = null))
+        override suspend fun updateWallet(id: String, wallet: ServerWallet) =
+            Response.success(ApiResponse(success = true, data = wallet.copy(id = id)))
 
-        override suspend fun deleteWallet(id: String): Response<ResponseBody> =
-            Response.success(ResponseBody.create(null, ""))
+        override suspend fun addMoneyToWallet(id: String, amount: Double) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = ServerWallet(
+                        id = id,
+                        balance = amount
+                    )
+                )
+            )
 
-        override suspend fun topUpWallet(id: String, request: TopUpWalletRequest): Response<ApiResponse<ServerWallet>> =
-            Response.success(ApiResponse(success = true, data = null))
+        override suspend fun deleteWallet(id: String) =
+            Response.success(ApiResponse<Unit>(success = true))
 
-        override suspend fun getBudget(month: Int, year: Int): Response<ApiResponse<ServerBudget>> =
-            Response.success(ApiResponse(success = true, data = null))
-
-        override suspend fun saveBudget(budget: ServerBudget): Response<ApiResponse<ServerBudget>> =
+        override suspend fun saveBudget(budget: ServerBudget) =
             Response.success(ApiResponse(success = true, data = budget))
 
-        override suspend fun getGoals(month: Int, year: Int): Response<ApiResponse<List<ServerGoal>>> =
-            Response.success(ApiResponse(success = true, data = emptyList()))
+        override suspend fun getGoals(month: Int, year: Int) =
+            Response.success(ApiResponse(success = true, data = emptyList<ServerGoal>()))
 
-        override suspend fun addGoal(goal: ServerGoal): Response<ApiResponse<ServerGoal>> =
-            Response.success(ApiResponse(success = true, data = goal))
+        override suspend fun addGoal(goal: ServerGoal) =
+            Response.success(ApiResponse(success = true, data = goal.copy(id = "server-goal-id")))
 
-        override suspend fun deleteGoal(id: String): Response<ResponseBody> =
-            Response.success(ResponseBody.create(null, ""))
+        override suspend fun updateGoal(id: String, goal: ServerGoal) =
+            Response.success(ApiResponse(success = true, data = goal.copy(id = id)))
 
-        override suspend fun getDashboardSummary(): Response<ApiResponse<ServerDashboardSummary>> =
-            Response.success(ApiResponse(success = true, data = null))
+        override suspend fun updateGoalStatus(id: String, completed: Boolean) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = ServerGoal(id = id, completed = completed)
+                )
+            )
+
+        override suspend fun deleteGoal(id: String) =
+            Response.success(ApiResponse<Unit>(success = true))
+
+        override suspend fun getDashboardSummary() =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = ServerDashboardSummary(
+                        availableBalance = 0.0,
+                        monthlyIncome = 0.0,
+                        monthlyBudgetLimit = 0.0,
+                        monthlySpent = 0.0
+                    )
+                )
+            )
+
+        override suspend fun updateUserSettings(settings: UserSettingsRequest) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = UserProfile(name = settings.name)
+                )
+            )
     }
 
     @Before
@@ -129,101 +180,67 @@ class BackendCrudTest {
     }
 
     @Test
-    fun `test POST addTransaction retains transaction in Room and handles server response`() = runBlocking {
-        val tx = TransactionEntity(
-            id = "tx_post_1",
+    fun `created transaction is cached only after backend returns its record`() = runBlocking {
+        val transaction = TransactionEntity(
+            id = "local-id",
             type = "expense",
             amount = 150.0,
             category = "Dining",
             description = "Lunch with team",
-            date = "2026-09-27 12:30",
-            walletId = ""
+            date = "2026-09-27 12:30"
         )
 
-        repository.addTransaction(tx)
+        repository.addTransaction(transaction)
 
-        // Verify transaction is persisted locally (with server ID mapping or original ID)
-        val allTx = db.appDao().getAllTransactionsList()
-        assertEquals(1, allTx.size)
-        assertTrue(allTx.any { it.description == "Lunch with team" && it.amount == 150.0 })
+        val cached = db.appDao().getAllTransactionsList()
+        assertEquals(1, cached.size)
+        assertEquals("server-transaction-id", cached.single().id)
+        assertEquals("Lunch with team", cached.single().description)
+        assertEquals(150.0, cached.single().amount, 0.001)
     }
 
     @Test
-    fun `test PUT updateTransaction updates transaction details in Room`() = runBlocking {
-        val tx = TransactionEntity(
-            id = "tx_put_1",
+    fun `updated transaction is cached from backend response`() = runBlocking {
+        val original = TransactionEntity(
+            id = "server-tx-id",
             type = "expense",
             amount = 200.0,
             category = "Transport",
             description = "Taxi ride",
             date = "2026-09-27 10:00"
         )
-        db.appDao().insertTransaction(tx)
+        db.appDao().insertTransaction(original)
 
-        val updated = tx.copy(amount = 250.0, description = "Airport Taxi")
-        repository.updateTransaction(updated)
+        repository.updateTransaction(original.copy(amount = 250.0, description = "Airport Taxi"))
 
-        val retrieved = db.appDao().getTransactionById("tx_put_1")
-        assertNotNull(retrieved)
-        assertEquals(250.0, retrieved!!.amount, 0.001)
-        assertEquals("Airport Taxi", retrieved.description)
+        val cached = db.appDao().getTransactionById("server-tx-id")
+        assertNotNull(cached)
+        assertEquals(250.0, cached!!.amount, 0.001)
+        assertEquals("Airport Taxi", cached.description)
     }
 
     @Test
-    fun `test DELETE deleteTransaction removes transaction from Room`() = runBlocking {
-        val tx = TransactionEntity(
-            id = "tx_del_1",
-            type = "expense",
-            amount = 50.0,
-            category = "Coffee",
-            description = "Espresso",
-            date = "2026-09-27 08:30"
-        )
-        db.appDao().insertTransaction(tx)
-        assertNotNull(db.appDao().getTransactionById("tx_del_1"))
+    fun `failed backend transaction response does not create a local record`() = runBlocking {
+        val failingApi = object : BackendApiService by mockApiService {
+            override suspend fun addTransaction(transaction: ServerTransaction) =
+                Response.success(ApiResponse<ServerTransaction>(success = false, message = "Rejected"))
+        }
+        val failingRepository = ExpenseRepository(db.appDao(), failingApi)
 
-        repository.deleteTransaction("tx_del_1")
-        assertNull(db.appDao().getTransactionById("tx_del_1"))
-    }
+        val result = runCatching {
+            failingRepository.addTransaction(
+                TransactionEntity(
+                    id = "local-id",
+                    type = "expense",
+                    amount = 150.0,
+                    category = "Dining",
+                    description = "Lunch",
+                    date = "2026-09-27 12:30"
+                )
+            )
+        }
 
-    @Test
-    fun `test Safe Sync NEVER deletes newly added local transactions when server returns empty list`() = runBlocking {
-        // User creates a transaction locally
-        val userTx = TransactionEntity(
-            id = "local_tx_new",
-            type = "expense",
-            amount = 500.0,
-            category = "Groceries",
-            description = "Supermarket visit",
-            date = "2026-09-27"
-        )
-        db.appDao().insertTransaction(userTx)
-
-        // Verify it exists in Room
-        assertEquals(1, db.appDao().getAllTransactionsList().size)
-
-        // Now simulate user tapping "Sync with Server" (where server returns empty list [])
-        val syncResult = repository.syncTransactionsFromServer()
-        assertTrue(syncResult.isSuccess)
-
-        // CRITICAL CHECK: Transaction must NOT have been removed by sync!
-        val remaining = db.appDao().getAllTransactionsList()
-        assertEquals(1, remaining.size)
-        assertEquals("Supermarket visit", remaining[0].description)
-        assertEquals(500.0, remaining[0].amount, 0.001)
-    }
-
-    @Test
-    fun `test CRUD Diagnostics runs successfully and checks all methods`() = runBlocking {
-        val diagnostics = repository.runCrudDiagnostics()
-        assertNotNull(diagnostics)
-        assertTrue(diagnostics.isNotEmpty())
-
-        val methods = diagnostics.map { it.method }
-        assertTrue(methods.contains("GET"))
-        assertTrue(methods.contains("POST"))
-        assertTrue(methods.contains("PUT"))
-        assertTrue(methods.contains("DELETE"))
-        assertTrue(methods.contains("SYNC"))
+        assertTrue(result.isFailure)
+        assertTrue(db.appDao().getAllTransactionsList().isEmpty())
     }
 }

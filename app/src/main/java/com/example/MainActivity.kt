@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +72,9 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val apiTestResults by viewModel.apiTestResults.collectAsStateWithLifecycle()
     val isRunningApiTests by viewModel.isRunningApiTests.collectAsStateWithLifecycle()
+    val serverConnected by viewModel.serverConnected.collectAsStateWithLifecycle()
+    val operationError by viewModel.operationErrorMessage.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val currencySymbol = userSettings?.currency ?: "₹"
     val accentColor = userSettings?.accentColor ?: "purple"
@@ -77,6 +83,14 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
         "light" -> false
         "system" -> isSystemInDarkTheme()
         else -> true
+    }
+
+    LaunchedEffect(isAuthenticated, operationError) {
+        val message = operationError?.takeIf(String::isNotBlank)
+        if (isAuthenticated && message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearOperationError()
+        }
     }
 
     // Modal dialog states
@@ -97,6 +111,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
         } else {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
+                snackbarHost = { SnackbarHost(snackbarHostState) },
                 topBar = {
                     TopBar(
                         userSettings = userSettings,
@@ -179,6 +194,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                                 onClearLocalData = { viewModel.clearAllLocalData() },
                                 onSyncServer = { viewModel.syncAllData() },
                                 onLogout = { viewModel.logout() },
+                                serverConnected = serverConnected,
                                 apiTestResults = apiTestResults,
                                 isRunningApiTests = isRunningApiTests,
                                 onRunApiTests = { viewModel.runBackendCrudDiagnostics() }

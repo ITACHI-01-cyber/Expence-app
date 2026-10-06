@@ -41,7 +41,7 @@ fun TopBar(
     modifier: Modifier = Modifier
 ) {
     val colors = AppTheme.colors
-    val userName = userSettings?.name?.split(" ")?.firstOrNull() ?: "Vivek"
+    val userName = userSettings?.name?.split(" ")?.firstOrNull()?.takeIf(String::isNotBlank) ?: "User"
 
     Surface(
         color = colors.background,

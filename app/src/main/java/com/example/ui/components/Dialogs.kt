@@ -366,13 +366,13 @@ fun AddEditWalletDialog(
     onDismiss: () -> Unit,
     onSave: (bankName: String, cardType: String, cardBrand: String, cardNumber: String, cardHolderName: String, expiryDate: String, balance: Double, designId: String, primaryColor: String, secondaryColor: String) -> Unit
 ) {
-    var bankName by remember { mutableStateOf(initialWallet?.bankName ?: "HDFC Bank") }
+    var bankName by remember { mutableStateOf(initialWallet?.bankName ?: "") }
     var cardType by remember { mutableStateOf(initialWallet?.cardType ?: "debit") }
-    var cardBrand by remember { mutableStateOf(initialWallet?.cardBrand ?: "Visa") }
+    var cardBrand by remember { mutableStateOf(initialWallet?.cardBrand ?: "visa") }
     var cardNumber by remember { mutableStateOf(initialWallet?.cardNumber ?: "") }
-    var cardHolderName by remember { mutableStateOf(initialWallet?.cardHolderName ?: "Guest User") }
-    var expiryDate by remember { mutableStateOf(initialWallet?.expiryDate ?: "12/28") }
-    var balanceStr by remember { mutableStateOf(initialWallet?.balance?.toString() ?: "5000") }
+    var cardHolderName by remember { mutableStateOf(initialWallet?.cardHolderName ?: "") }
+    var expiryDate by remember { mutableStateOf(initialWallet?.expiryDate ?: "") }
+    var balanceStr by remember { mutableStateOf(initialWallet?.balance?.toString() ?: "0") }
     var designId by remember { mutableStateOf(initialWallet?.designId ?: "midnight") }
 
     val themes = listOf(

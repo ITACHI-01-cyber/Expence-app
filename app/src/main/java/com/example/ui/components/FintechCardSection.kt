@@ -536,7 +536,7 @@ fun FintechDigitalCard(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = activeWallet.cardHolderName.ifBlank { "VIVEK BHARDWAJ" }.uppercase(),
+                                    text = activeWallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,

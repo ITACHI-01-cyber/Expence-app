@@ -102,6 +102,9 @@ interface AppDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveBudgetConfig(config: BudgetConfigEntity)
 
+    @Query("DELETE FROM budget_config")
+    suspend fun clearBudgetConfig()
+
     // ── User Settings ──
     @Query("SELECT * FROM user_settings WHERE id = 1 LIMIT 1")
     fun getUserSettings(): Flow<UserSettingsEntity?>
@@ -111,4 +114,7 @@ interface AppDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUserSettings(settings: UserSettingsEntity)
+
+    @Query("DELETE FROM user_settings")
+    suspend fun clearUserSettings()
 }

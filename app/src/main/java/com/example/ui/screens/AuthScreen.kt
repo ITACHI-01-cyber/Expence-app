@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -111,7 +110,6 @@ fun AuthScreen(
     val authErrorMessage by viewModel.authErrorMessage.collectAsStateWithLifecycle()
     val authSuccessMessage by viewModel.authSuccessMessage.collectAsStateWithLifecycle()
     val otpEmail by viewModel.otpEmail.collectAsStateWithLifecycle()
-    val activeOtpCode by viewModel.activeOtpCode.collectAsStateWithLifecycle()
     val otpCooldown by viewModel.otpCooldown.collectAsStateWithLifecycle()
     val gmailBanner by viewModel.gmailNotificationBanner.collectAsStateWithLifecycle()
 
@@ -152,54 +150,6 @@ fun AuthScreen(
                 )
         )
 
-        // OTP Banner simulation for testing convenience
-        AnimatedVisibility(
-            visible = authPhase == AuthPhase.OTP_VERIFICATION && activeOtpCode.isNotBlank(),
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(16.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xFF1E293B),
-                border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
-                shadowElevation = 6.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 440.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Email,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Email Service: Verification Code Sent",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Text(
-                            text = "Your OTP is: $activeOtpCode",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-            }
-        }
-
         // Centered Content (Mobile-first, desktop width capped at 440.dp)
         Column(
             modifier = Modifier
@@ -236,8 +186,8 @@ fun AuthScreen(
                     AuthPhase.SIGNUP -> SignUpView(
                         isAuthenticating = isAuthenticating,
                         errorMessage = authErrorMessage,
-                        onSignUp = { user, email, pass, confirm ->
-                            viewModel.signupUser(user, email, pass, confirm)
+                        onSignUp = { name, user, email, pass, confirm ->
+                            viewModel.signupUser(name, user, email, pass, confirm)
                         },
                         onBackToLogin = { viewModel.setAuthPhase(AuthPhase.LOGIN) },
                         onClearError = { viewModel.clearAuthError() }
@@ -252,6 +202,7 @@ fun AuthScreen(
                     )
 
                     AuthPhase.OTP_VERIFICATION -> OtpVerificationView(
+                        isAuthenticating = isAuthenticating,
                         targetEmail = otpEmail,
                         cooldownSeconds = otpCooldown,
                         errorMessage = authErrorMessage,
@@ -293,8 +244,8 @@ private fun LoginView(
     onCreateAccount: () -> Unit,
     onClearError: () -> Unit
 ) {
-    var identifier by remember { mutableStateOf("vivek123") }
-    var password by remember { mutableStateOf("Password@123") }
+    var identifier by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
     Column(
@@ -345,18 +296,18 @@ private fun LoginView(
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        // Username / ID Field
+        // Matches the production website's email/identifier login field.
         FintechInputField(
-            label = "Username / ID",
+            label = "Email Address",
             value = identifier,
             onValueChange = {
                 identifier = it
                 onClearError()
             },
-            placeholder = "Enter your username or ID",
-            leadingIcon = Icons.Default.Person,
+            placeholder = "you@example.com",
+            leadingIcon = Icons.Default.Email,
             imeAction = ImeAction.Next,
-            testTag = "login_username_input"
+            testTag = "login_email_input"
         )
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -445,10 +396,11 @@ private fun LoginView(
 private fun SignUpView(
     isAuthenticating: Boolean,
     errorMessage: String?,
-    onSignUp: (String, String, String, String) -> Unit,
+    onSignUp: (String, String, String, String, String) -> Unit,
     onBackToLogin: () -> Unit,
     onClearError: () -> Unit
 ) {
+    var name by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -532,6 +484,21 @@ private fun SignUpView(
         }
 
         FintechInputField(
+            label = "Full Name",
+            value = name,
+            onValueChange = {
+                name = it
+                onClearError()
+            },
+            placeholder = "Enter your name",
+            leadingIcon = Icons.Default.Person,
+            imeAction = ImeAction.Next,
+            testTag = "signup_name_input"
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        FintechInputField(
             label = "Username / User ID",
             value = username,
             onValueChange = {
@@ -594,7 +561,7 @@ private fun SignUpView(
             onTogglePasswordVisibility = { confirmPasswordVisible = !confirmPasswordVisible },
             imeAction = ImeAction.Done,
             onDone = {
-                if (!isAuthenticating) onSignUp(username, email, password, confirmPassword)
+                if (!isAuthenticating) onSignUp(name, username, email, password, confirmPassword)
             },
             testTag = "signup_confirm_password_input"
         )
@@ -604,7 +571,7 @@ private fun SignUpView(
         FintechPrimaryButton(
             text = if (isAuthenticating) "Creating Account..." else "Create Account",
             isLoading = isAuthenticating,
-            onClick = { onSignUp(username, email, password, confirmPassword) },
+            onClick = { onSignUp(name, username, email, password, confirmPassword) },
             testTag = "signup_submit_btn"
         )
 
@@ -645,7 +612,7 @@ private fun ForgotPasswordView(
     onBackToLogin: () -> Unit,
     onClearError: () -> Unit
 ) {
-    var identifier by remember { mutableStateOf("bhardwajvivek226@gmail.com") }
+    var identifier by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -708,7 +675,7 @@ private fun ForgotPasswordView(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Enter your username or registered email address and we'll send you a verification code.",
+            text = "Enter your registered email address and we'll send you a verification code.",
             fontSize = 13.5.sp,
             color = Color(0xFF94A3B8),
             textAlign = TextAlign.Center
@@ -722,13 +689,13 @@ private fun ForgotPasswordView(
         }
 
         FintechInputField(
-            label = "Username / Email",
+            label = "Email Address",
             value = identifier,
             onValueChange = {
                 identifier = it
                 onClearError()
             },
-            placeholder = "Enter your username or email",
+            placeholder = "you@example.com",
             leadingIcon = Icons.Default.Email,
             imeAction = ImeAction.Done,
             onDone = {
@@ -767,6 +734,7 @@ private fun ForgotPasswordView(
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun OtpVerificationView(
+    isAuthenticating: Boolean,
     targetEmail: String,
     cooldownSeconds: Int,
     errorMessage: String?,
@@ -928,10 +896,11 @@ private fun OtpVerificationView(
         Spacer(modifier = Modifier.height(24.dp))
 
         FintechPrimaryButton(
-            text = "Verify OTP",
+            text = if (isAuthenticating) "Verifying..." else "Verify OTP",
+            isLoading = isAuthenticating,
             onClick = {
                 val fullCode = otpDigits.joinToString("")
-                onVerifyOtp(fullCode)
+                if (!isAuthenticating) onVerifyOtp(fullCode)
             },
             testTag = "verify_otp_btn"
         )

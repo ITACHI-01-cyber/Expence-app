@@ -120,7 +120,7 @@ fun formatCurrency(amount: Double, symbol: String = "$"): String {
 fun formatCardNumberSpaced(rawNumber: String): String {
     val clean = rawNumber.filter { it.isDigit() }
     if (clean.length < 12) {
-        return rawNumber.ifBlank { "4153   2415   3467   8764" }
+        return rawNumber.ifBlank { "••••   ••••   ••••   ••••" }
     }
     val padded = clean.padEnd(16, '0')
     return "${padded.substring(0, 4)}   ${padded.substring(4, 8)}   ${padded.substring(8, 12)}   ${padded.substring(12, 16)}"
@@ -169,55 +169,19 @@ fun CardCarousel(
     val activeIndex = if (wallets.isEmpty()) 0 else selectedIndex.coerceIn(0, wallets.lastIndex)
 
     val activeWallet = wallets.getOrNull(activeIndex) ?: WalletEntity(
-        id = "demo_card_1",
-        bankName = "onebank",
-        cardType = "debit",
-        cardBrand = "Visa",
-        cardNumber = "4153241534678764",
-        cardHolderName = "Vivek Bhardwaj",
-        expiryDate = "06/25",
-        balance = 3567.37,
-        primaryColor = "#B8A9E8",
-        secondaryColor = "#8875E3",
-        designId = "lavender"
+        bankName = "",
+        cardType = "",
+        cardNumber = ""
     )
 
     // Left and right stacked cards for fanned-out 3D presentation
     val leftWallet = if (wallets.size > 1) {
         wallets[(activeIndex + wallets.size - 1) % wallets.size]
-    } else {
-        WalletEntity(
-            id = "demo_card_2",
-            bankName = "onebank",
-            cardType = "credit",
-            cardBrand = "Mastercard",
-            cardNumber = "5241891243219081",
-            cardHolderName = "Vivek Bhardwaj",
-            expiryDate = "09/27",
-            balance = 1840.50,
-            primaryColor = "#1F1F24",
-            secondaryColor = "#131316",
-            designId = "midnight"
-        )
-    }
+    } else activeWallet
 
     val rightWallet = if (wallets.size > 2) {
         wallets[(activeIndex + 1) % wallets.size]
-    } else {
-        WalletEntity(
-            id = "demo_card_3",
-            bankName = "onebank",
-            cardType = "platinum",
-            cardBrand = "Visa",
-            cardNumber = "4820119077345120",
-            cardHolderName = "Vivek Bhardwaj",
-            expiryDate = "11/28",
-            balance = 4250.00,
-            primaryColor = "#E2E4EE",
-            secondaryColor = "#D3D7E5",
-            designId = "translucent"
-        )
-    }
+    } else activeWallet
 
     val balanceAmount = if (wallets.isEmpty()) 0.0 else activeWallet.balance
     val formattedBalance = String.format(Locale.US, "%.2f", balanceAmount)
@@ -379,14 +343,14 @@ fun CardCarousel(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = rightWallet.cardBrand.ifBlank { "VISA" }.uppercase(),
+                            text = rightWallet.cardBrand.ifBlank { "CARD" }.uppercase(),
                             color = Color(0xFF71717A).copy(alpha = 0.6f),
                             fontWeight = FontWeight.Bold,
                             fontStyle = FontStyle.Italic,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = rightWallet.bankName.ifBlank { "onebank" },
+                            text = rightWallet.bankName,
                             color = Color(0xFF52525B).copy(alpha = 0.7f),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
@@ -426,7 +390,7 @@ fun CardCarousel(
                             MastercardLogo()
                         } else {
                             Text(
-                                text = leftWallet.cardBrand.uppercase(),
+                                text = leftWallet.cardBrand.ifBlank { "CARD" }.uppercase(),
                                 color = Color.White.copy(alpha = 0.8f),
                                 fontWeight = FontWeight.Black,
                                 fontStyle = FontStyle.Italic,
@@ -435,7 +399,7 @@ fun CardCarousel(
                         }
 
                         Text(
-                            text = leftWallet.bankName.ifBlank { "onebank" },
+                            text = leftWallet.bankName,
                             color = Color(0xFFA0A0AB),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
@@ -543,7 +507,7 @@ fun CardCarousel(
                                     MastercardLogo()
                                 } else {
                                     Text(
-                                        text = activeWallet.cardBrand.ifBlank { "VISA" }.uppercase(),
+                                        text = activeWallet.cardBrand.ifBlank { "CARD" }.uppercase(),
                                         color = Color.White,
                                         fontWeight = FontWeight.Black,
                                         fontStyle = FontStyle.Italic,
@@ -553,7 +517,7 @@ fun CardCarousel(
                                 }
 
                                 Text(
-                                    text = activeWallet.bankName.ifBlank { "onebank" },
+                                    text = activeWallet.bankName,
                                     color = Color.White,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 15.sp,
@@ -579,7 +543,7 @@ fun CardCarousel(
                                     val displayedNumber = if (showNumbers) {
                                         formatCardNumberSpaced(activeWallet.cardNumber)
                                     } else {
-                                        val lastFour = if (activeWallet.cardNumber.length >= 4) activeWallet.cardNumber.takeLast(4) else "8764"
+                                        val lastFour = if (activeWallet.cardNumber.length >= 4) activeWallet.cardNumber.takeLast(4) else "••••"
                                         "••••   ••••   ••••   $lastFour"
                                     }
 
@@ -601,14 +565,14 @@ fun CardCarousel(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = activeWallet.expiryDate.ifBlank { "06/25" },
+                                            text = activeWallet.expiryDate.ifBlank { "MM/YY" },
                                             color = Color.White.copy(alpha = 0.9f),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium
                                         )
 
                                         Text(
-                                            text = activeWallet.cardHolderName.ifBlank { "Vivek Bhardwaj" }.uppercase(),
+                                            text = activeWallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
                                             color = Color.White.copy(alpha = 0.8f),
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.SemiBold,
@@ -824,7 +788,7 @@ fun WalletCardItem(
                     }
 
                     Text(
-                        text = wallet.bankName.ifBlank { "onebank" },
+                        text = wallet.bankName,
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold

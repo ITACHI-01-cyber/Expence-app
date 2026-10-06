@@ -594,7 +594,7 @@ fun CustomizablePaymentCardView(
                             letterSpacing = 0.8.sp
                         )
                         Text(
-                            text = wallet.cardHolderName.ifBlank { "VIVEK BHARDWAJ" }.uppercase(),
+                            text = wallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,

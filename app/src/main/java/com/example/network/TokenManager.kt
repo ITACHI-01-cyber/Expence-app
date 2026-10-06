@@ -2,9 +2,11 @@ package com.example.network
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 object TokenManager {
-    private const val PREFS_NAME = "expencetrack_secure_prefs"
+    private const val PREFS_NAME = "expencetrack_encrypted_auth_prefs"
     private const val KEY_JWT_TOKEN = "jwt_access_token"
     private const val KEY_USER_ID = "user_id"
     private const val KEY_USER_NAME = "user_name"
@@ -20,7 +22,17 @@ object TokenManager {
         if (prefs == null) {
             synchronized(this) {
                 if (prefs == null) {
-                    val p = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    val appContext = context.applicationContext
+                    val masterKey = MasterKey.Builder(appContext)
+                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                        .build()
+                    val p = EncryptedSharedPreferences.create(
+                        appContext,
+                        PREFS_NAME,
+                        masterKey,
+                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                    )
                     prefs = p
                     cachedToken = p.getString(KEY_JWT_TOKEN, null)
                 }

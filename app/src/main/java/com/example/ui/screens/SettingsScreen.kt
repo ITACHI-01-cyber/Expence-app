@@ -67,6 +67,7 @@ fun SettingsScreen(
     onClearLocalData: () -> Unit = {},
     onSyncServer: () -> Unit = {},
     onLogout: () -> Unit = {},
+    serverConnected: Boolean = false,
     apiTestResults: List<ApiTestCaseResult> = emptyList(),
     isRunningApiTests: Boolean = false,
     onRunApiTests: () -> Unit = {},
@@ -89,7 +90,7 @@ fun SettingsScreen(
     val accents = listOf(
         "purple" to Color(0xFF7C3AED),
         "blue" to Color(0xFF2563EB),
-        "emerald" to Color(0xFF059669),
+        "green" to Color(0xFF059669),
         "rose" to Color(0xFFE11D48)
     )
 
@@ -380,7 +381,7 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .size(10.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF22C55E))
+                                    .background(if (serverConnected) Color(0xFF22C55E) else Color(0xFFEF4444))
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
@@ -399,13 +400,13 @@ fun SettingsScreen(
 
                         Surface(
                             shape = RoundedCornerShape(100),
-                            color = Color(0xFF22C55E).copy(alpha = 0.15f)
+                            color = (if (serverConnected) Color(0xFF22C55E) else Color(0xFFEF4444)).copy(alpha = 0.15f)
                         ) {
                             Text(
-                                text = "LIVE ONLINE",
+                                text = if (serverConnected) "CONNECTED" else "NOT SYNCED",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF15803D),
+                                color = if (serverConnected) Color(0xFF15803D) else Color(0xFFB91C1C),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -431,7 +432,7 @@ fun SettingsScreen(
             }
         }
 
-        // Backend Endpoints & CRUD Diagnostic Check (GET, POST, PUT, DELETE)
+        // Read-only checks against production website endpoints.
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("api_diagnostics_card"),
@@ -458,7 +459,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Backend API & CRUD Tests",
+                                text = "Backend API Reachability",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -470,7 +471,7 @@ fun SettingsScreen(
                             color = Color(0xFF10B981).copy(alpha = 0.12f)
                         ) {
                             Text(
-                                text = "Safe Sync Active",
+                                text = "Read-only checks",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF059669),
@@ -481,7 +482,7 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Verify GET, POST, PUT, and DELETE backend calls in real time. Local-first architecture guarantees your transactions are never wiped or removed during sync.",
+                        text = "Checks only the existing website's GET endpoints. The backend remains the source of truth; Room is an optional local cache.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 16.sp
@@ -505,7 +506,7 @@ fun SettingsScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Testing Endpoints (GET, POST, PUT, DELETE)...", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Checking backend...", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         } else {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
@@ -513,7 +514,7 @@ fun SettingsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Run Backend CRUD Test Suite", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Check backend endpoints", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -710,9 +711,11 @@ fun SettingsScreen(
                     )
                     OutlinedTextField(
                         value = editEmail,
-                        onValueChange = { editEmail = it },
+                        onValueChange = {},
                         label = { Text("Email Address") },
-                        singleLine = true
+                        singleLine = true,
+                        readOnly = true,
+                        supportingText = { Text("Email changes are not supported by the website API.") }
                     )
                 }
             },
