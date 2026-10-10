@@ -19,7 +19,7 @@ interface BackendApiService {
     suspend fun login(@Body request: LoginRequest): Response<ApiResponse<LoginData>>
 
     @POST("auth/register/send-otp")
-    suspend fun sendRegistrationOtp(@Body request: RegisterRequest): Response<ApiResponse<Unit>>
+    suspend fun sendRegistrationOtp(@Body request: RegisterRequest): Response<ApiActionResponse>
 
     @POST("auth/register/verify-otp")
     suspend fun verifyRegistrationOtp(@Body request: VerifyOtpRequest): Response<ApiResponse<LoginData>>
@@ -28,25 +28,25 @@ interface BackendApiService {
     suspend fun verifyLoginOtp(@Body request: VerifyLoginOtpRequest): Response<ApiResponse<LoginData>>
 
     @POST("auth/forgot-password/request")
-    suspend fun requestPasswordReset(@Body request: ForgotPasswordRequest): Response<ApiResponse<Unit>>
+    suspend fun requestPasswordReset(@Body request: ForgotPasswordRequest): Response<ApiActionResponse>
 
     @POST("auth/forgot-password/reset")
-    suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<ApiResponse<Unit>>
+    suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<ApiActionResponse>
 
     @POST("auth/forgot-username/request")
     suspend fun requestUsernameRecovery(
         @Body request: ForgotUsernameRequest
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
 
     @POST("auth/forgot-username/change-via-otp")
     suspend fun changeUsernameByOtp(
         @Body request: ChangeUsernameByOtpRequest
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
 
     @POST("auth/forgot-username/change-via-password")
     suspend fun changeUsernameByPassword(
         @Body request: ChangeUsernameByPasswordRequest
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
 
     @GET("transactions")
     suspend fun getTransactions(
@@ -61,6 +61,12 @@ interface BackendApiService {
         @Body transaction: ServerTransaction
     ): Response<ApiResponse<ServerTransaction>>
 
+    @POST("transactions/{id}/refunds")
+    suspend fun recordCreditRefund(
+        @Path("id") purchaseId: String,
+        @Body request: CreditRefundRequest
+    ): Response<ApiResponse<ServerTransaction>>
+
     @PUT("transactions/{id}")
     suspend fun updateTransaction(
         @Path("id") id: String,
@@ -70,7 +76,7 @@ interface BackendApiService {
     @DELETE("transactions/{id}")
     suspend fun deleteTransaction(
         @Path("id") id: String
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
 
     @GET("wallet")
     suspend fun getWallets(): Response<ApiResponse<List<ServerWallet>>>
@@ -95,7 +101,29 @@ interface BackendApiService {
     @DELETE("wallet/{id}")
     suspend fun deleteWallet(
         @Path("id") id: String
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
+
+    @POST("wallet/{id}/repayments")
+    suspend fun recordCreditCardRepayment(
+        @Path("id") cardId: String,
+        @Body request: CreditRepaymentRequest
+    ): Response<ApiResponse<CreditRepaymentResponse>>
+
+    @GET("wallet/{id}/statements")
+    suspend fun getCreditCardStatements(
+        @Path("id") cardId: String
+    ): Response<ApiResponse<List<CreditStatement>>>
+
+    @POST("wallet/{id}/statements/generate")
+    suspend fun generateCreditCardStatement(
+        @Path("id") cardId: String,
+        @Body request: CreditStatementRequest
+    ): Response<ApiResponse<CreditStatement>>
+
+    @GET("wallet/{id}/activity")
+    suspend fun getCreditCardActivity(
+        @Path("id") cardId: String
+    ): Response<ApiResponse<List<CreditActivityItem>>>
 
     @POST("budget")
     suspend fun saveBudget(
@@ -128,7 +156,7 @@ interface BackendApiService {
     @DELETE("goals/{id}")
     suspend fun deleteGoal(
         @Path("id") id: String
-    ): Response<ApiResponse<Unit>>
+    ): Response<ApiActionResponse>
 
     @GET("dashboard/summary")
     suspend fun getDashboardSummary(): Response<ApiResponse<ServerDashboardSummary>>

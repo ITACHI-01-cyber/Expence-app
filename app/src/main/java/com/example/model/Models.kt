@@ -14,6 +14,14 @@ data class WalletEntity(
     val cardHolderName: String = "",
     val expiryDate: String = "",
     val balance: Double = 0.0,
+    val cardName: String = "",
+    val creditLimit: Double? = null,
+    val outstandingBalance: Double? = null,
+    val statementClosingDay: Int? = null,
+    val paymentDueDay: Int? = null,
+    val minimumPaymentAmount: Double? = null,
+    val creditTermsConfigured: Boolean = false,
+    val timezone: String = "UTC",
     val primaryColor: String = "#1A1A2E",
     val secondaryColor: String = "#16213E",
     val designId: String = "midnight",
@@ -28,6 +36,12 @@ data class WalletEntity(
     val backContactInfo: String = "support@bank.com | 1-800-555-0199"
 )
 
+@Entity(tableName = "card_display_balances")
+data class CardDisplayBalanceEntity(
+    @PrimaryKey val walletId: String,
+    val balance: Double
+)
+
 @Entity(tableName = "transactions")
 data class TransactionEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
@@ -38,7 +52,11 @@ data class TransactionEntity(
     val date: String, // yyyy-MM-dd HH:mm
     val timestamp: Long = System.currentTimeMillis(),
     val isRecurring: Boolean = false,
-    val walletId: String = ""
+    val walletId: String = "",
+    val transactionKind: String = "standard",
+    val idempotencyKey: String? = null,
+    val statementId: String? = null,
+    val relatedTransactionId: String? = null
 )
 
 @Entity(tableName = "savings_goals")

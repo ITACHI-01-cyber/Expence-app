@@ -63,17 +63,26 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
     val userSettings by viewModel.userSettings.collectAsStateWithLifecycle()
     val wallets by viewModel.wallets.collectAsStateWithLifecycle()
+    val cardDisplayBalances by viewModel.cardDisplayBalances.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactions.collectAsStateWithLifecycle()
     val goals by viewModel.goals.collectAsStateWithLifecycle()
     val dashboardSummary by viewModel.dashboardSummary.collectAsStateWithLifecycle()
     val categoryExpenses by viewModel.categoryExpenses.collectAsStateWithLifecycle()
-    val dailyExpenses by viewModel.dailyExpenses.collectAsStateWithLifecycle()
-    val budgetPlannerStats by viewModel.budgetPlannerStats.collectAsStateWithLifecycle()
+    val transactionSyncError by viewModel.transactionSyncError.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val isTransactionOperationInProgress by
+        viewModel.isTransactionOperationInProgress.collectAsStateWithLifecycle()
+    val isTransactionDeleteInProgress by
+        viewModel.isTransactionDeleteInProgress.collectAsStateWithLifecycle()
     val apiTestResults by viewModel.apiTestResults.collectAsStateWithLifecycle()
     val isRunningApiTests by viewModel.isRunningApiTests.collectAsStateWithLifecycle()
     val serverConnected by viewModel.serverConnected.collectAsStateWithLifecycle()
     val operationError by viewModel.operationErrorMessage.collectAsStateWithLifecycle()
+    val operationSuccess by viewModel.operationSuccessMessage.collectAsStateWithLifecycle()
+    val creditStatements by viewModel.creditStatements.collectAsStateWithLifecycle()
+    val creditActivity by viewModel.creditActivity.collectAsStateWithLifecycle()
+    val creditDataLoading by viewModel.creditDataLoading.collectAsStateWithLifecycle()
+    val isCreditRepaymentInProgress by viewModel.creditRepaymentInProgress.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val currencySymbol = userSettings?.currency ?: "₹"
@@ -93,10 +102,19 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(isAuthenticated, operationSuccess) {
+        val message = operationSuccess?.takeIf(String::isNotBlank)
+        if (isAuthenticated && message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearOperationSuccess()
+        }
+    }
+
     // Modal dialog states
     var showAddTransactionDialog by remember { mutableStateOf(false) }
     var selectedTransactionToEdit by remember { mutableStateOf<TransactionEntity?>(null) }
-
+    var initialTransactionWalletId by remember { mutableStateOf<String?>(null) }
+    var isCreditPurchase by remember { mutableStateOf(false) }
     var showAddWalletDialog by remember { mutableStateOf(false) }
     var topUpTargetWallet by remember { mutableStateOf<WalletEntity?>(null) }
 
@@ -142,9 +160,10 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                                 wallets = wallets,
                                 recentTransactions = allTransactions,
                                 categoryExpenses = categoryExpenses,
-                                dailyExpenses = dailyExpenses,
                                 goals = goals,
                                 currencySymbol = currencySymbol,
+                                isTransactionsLoading = isSyncing,
+                                transactionLoadError = transactionSyncError,
                                 onAddCard = { showAddWalletDialog = true },
                                 onTopUpCard = { topUpTargetWallet = it },
                                 onEditBudget = { showEditBudgetDialog = true },
@@ -167,6 +186,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
 
                             ScreenTab.WALLET -> WalletScreen(
                                 wallets = wallets,
+                                cardDisplayBalances = cardDisplayBalances,
                                 transactions = allTransactions,
                                 currencySymbol = currencySymbol,
                                 onAddCard = { showAddWalletDialog = true },
@@ -175,14 +195,42 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                                 onTransactionClick = { selectedTransactionToEdit = it },
                                 onSaveCardCustomization = { walletId, theme, primaryColor, secondaryColor, accentColor, artwork, cardStyle ->
                                     viewModel.updateCardCustomization(walletId, theme, primaryColor, secondaryColor, accentColor, artwork, cardStyle)
-                                }
+                                },
+                                onSaveDisplayBalance = { walletId, balance, onComplete ->
+                                    viewModel.saveCardDisplayBalance(walletId, balance, onComplete)
+                                },
+                                onUpdateCreditSettings = { wallet, onComplete ->
+                                    viewModel.updateWallet(wallet, onComplete)
+                                },
+                                onRecordCreditPurchase = { wallet ->
+                                    viewModel.setTab(ScreenTab.TRANSACTIONS)
+                                    initialTransactionWalletId = wallet.id
+                                    isCreditPurchase = true
+                                    showAddTransactionDialog = true
+                                },
+                                creditStatements = creditStatements,
+                                creditActivity = creditActivity,
+                                creditDataLoading = creditDataLoading,
+                                isCreditRepaymentInProgress = isCreditRepaymentInProgress,
+                                isCreditRefundInProgress = isTransactionOperationInProgress,
+                                onLoadCreditCardData = viewModel::loadCreditCardData,
+                                onGenerateCreditCardStatement = viewModel::generateCreditCardStatement,
+                                onRecordCreditCardRepayment = viewModel::recordCreditCardRepayment,
+                                onRecordCreditCardRefund = viewModel::recordCreditCardRefund
                             )
 
                             ScreenTab.BUDGET -> BudgetPlannerScreen(
-                                stats = budgetPlannerStats,
-                                categories = categoryExpenses,
-                                recurringTransactions = allTransactions.filter { it.isRecurring && it.type == "expense" },
-                                currencySymbol = currencySymbol
+                                transactions = allTransactions,
+                                creditCards = wallets.filter {
+                                    it.cardType.equals("credit", ignoreCase = true) && it.creditTermsConfigured
+                                },
+                                creditActivity = creditActivity,
+                                creditDataLoading = creditDataLoading,
+                                onLoadCreditCardsData = viewModel::loadCreditCardsData,
+                                currencySymbol = currencySymbol,
+                                isLoading = isSyncing,
+                                loadError = transactionSyncError,
+                                onViewAllTransactions = { viewModel.setTab(ScreenTab.TRANSACTIONS) }
                             )
 
                             ScreenTab.SETTINGS -> SettingsScreen(
@@ -211,9 +259,32 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                 initialTransaction = null,
                 wallets = wallets,
                 currencySymbol = currencySymbol,
-                onDismiss = { showAddTransactionDialog = false },
-                onSave = { type, amount, category, description, date, isRecurring, walletId ->
-                    viewModel.addTransaction(type, amount, category, description, date, isRecurring, walletId)
+                initialWalletId = initialTransactionWalletId,
+                creditPurchaseMode = isCreditPurchase,
+                isSaving = isTransactionOperationInProgress,
+                isDeleting = false,
+                onDismiss = {
+                    showAddTransactionDialog = false
+                    initialTransactionWalletId = null
+                    isCreditPurchase = false
+                },
+                onSave = { type, amount, category, description, date, isRecurring, walletId, idempotencyKey ->
+                    viewModel.addTransaction(
+                        type,
+                        amount,
+                        category,
+                        description,
+                        date,
+                        isRecurring,
+                        walletId,
+                        idempotencyKey
+                    ) { confirmed ->
+                        if (confirmed) {
+                            showAddTransactionDialog = false
+                            initialTransactionWalletId = null
+                            isCreditPurchase = false
+                        }
+                    }
                 }
             )
         }
@@ -224,8 +295,10 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                 initialTransaction = tx,
                 wallets = wallets,
                 currencySymbol = currencySymbol,
+                isSaving = isTransactionOperationInProgress,
+                isDeleting = isTransactionDeleteInProgress,
                 onDismiss = { selectedTransactionToEdit = null },
-                onSave = { type, amount, category, description, date, isRecurring, walletId ->
+                onSave = { type, amount, category, description, date, isRecurring, walletId, _ ->
                     viewModel.updateTransaction(
                         tx.copy(
                             type = type,
@@ -236,12 +309,14 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                             isRecurring = isRecurring,
                             walletId = walletId
                         )
-                    )
-                    selectedTransactionToEdit = null
+                    ) { confirmed ->
+                        if (confirmed) selectedTransactionToEdit = null
+                    }
                 },
                 onDelete = {
-                    viewModel.deleteTransaction(tx.id)
-                    selectedTransactionToEdit = null
+                    viewModel.deleteTransaction(tx.id) { confirmed ->
+                        if (confirmed) selectedTransactionToEdit = null
+                    }
                 }
             )
         }

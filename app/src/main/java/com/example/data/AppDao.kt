@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.model.BudgetConfigEntity
+import com.example.model.CardDisplayBalanceEntity
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
@@ -14,6 +15,22 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AppDao {
+    // ── Display-only card balances ──
+    @Query("SELECT * FROM card_display_balances")
+    fun getCardDisplayBalances(): Flow<List<CardDisplayBalanceEntity>>
+
+    @Query("SELECT * FROM card_display_balances WHERE walletId = :walletId LIMIT 1")
+    suspend fun getCardDisplayBalance(walletId: String): CardDisplayBalanceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveCardDisplayBalance(balance: CardDisplayBalanceEntity)
+
+    @Query("DELETE FROM card_display_balances WHERE walletId = :walletId")
+    suspend fun deleteCardDisplayBalance(walletId: String)
+
+    @Query("DELETE FROM card_display_balances")
+    suspend fun clearCardDisplayBalances()
+
     // ── Wallets ──
     @Query("SELECT * FROM wallets ORDER BY id ASC")
     fun getAllWallets(): Flow<List<WalletEntity>>

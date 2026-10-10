@@ -3,12 +3,20 @@ package com.example.repository
 import com.example.data.AppDao
 import com.example.model.ApiTestCaseResult
 import com.example.model.BudgetConfigEntity
+import com.example.model.CardDisplayBalanceEntity
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
 import com.example.model.WalletEntity
+import com.example.network.ApiActionResponse
 import com.example.network.ApiResponse
 import com.example.network.BackendApiService
+import com.example.network.CreditActivityItem
+import com.example.network.CreditRepaymentRequest
+import com.example.network.CreditRepaymentResponse
+import com.example.network.CreditRefundRequest
+import com.example.network.CreditStatement
+import com.example.network.CreditStatementRequest
 import com.example.network.NetworkClient
 import com.example.network.ServerBudget
 import com.example.network.ServerDashboardSummary
@@ -30,14 +38,19 @@ class ExpenseRepository(
     private val apiService: BackendApiService = NetworkClient.apiService
 ) {
     val wallets: Flow<List<WalletEntity>> = dao.getAllWallets()
+    val cardDisplayBalances: Flow<List<CardDisplayBalanceEntity>> = dao.getCardDisplayBalances()
     val transactions: Flow<List<TransactionEntity>> = dao.getAllTransactions()
     val goals: Flow<List<SavingsGoalEntity>> = dao.getAllGoals()
     val budgetConfig: Flow<BudgetConfigEntity?> = dao.getBudgetConfig()
     val userSettings: Flow<UserSettingsEntity?> = dao.getUserSettings()
 
-    suspend fun syncAllFromServer(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun syncAllFromServer(
+        onTransactionSync: (Result<List<TransactionEntity>>) -> Unit = {}
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val transactionResult = syncTransactionsFromServer()
+        onTransactionSync(transactionResult)
         val results = listOf(
-            syncTransactionsFromServer(),
+            transactionResult,
             syncWalletsFromServer(),
             syncBudgetFromServer(),
             syncGoalsFromServer()
@@ -48,11 +61,7 @@ class ExpenseRepository(
 
     suspend fun syncTransactionsFromServer(): Result<List<TransactionEntity>> = withContext(Dispatchers.IO) {
         try {
-            val now = Calendar.getInstance()
-            val response = apiService.getTransactions(
-                month = now.get(Calendar.MONTH) + 1,
-                year = now.get(Calendar.YEAR)
-            )
+            val response = apiService.getTransactions()
             val items = response.requireData("transactions")
             val parsed = items.map { item ->
                 val id = item.mongoId ?: item.id
@@ -143,6 +152,17 @@ class ExpenseRepository(
     suspend fun deleteWallet(walletId: String) = withContext(Dispatchers.IO) {
         apiService.deleteWallet(walletId).requireSuccess("wallet deletion")
         dao.deleteWalletById(walletId)
+        dao.deleteCardDisplayBalance(walletId)
+    }
+
+    suspend fun saveCardDisplayBalance(walletId: String, balance: Double) = withContext(Dispatchers.IO) {
+        require(balance.isFinite() && balance >= 0.0) {
+            "Enter a valid non-negative card display balance."
+        }
+        if (dao.getWalletById(walletId) == null) {
+            throw IllegalStateException("The selected card is no longer available.")
+        }
+        dao.saveCardDisplayBalance(CardDisplayBalanceEntity(walletId, balance))
     }
 
     suspend fun topUpWallet(walletId: String, amount: Double) = withContext(Dispatchers.IO) {
@@ -150,6 +170,62 @@ class ExpenseRepository(
             .requireData("wallet balance update")
             .toEntity()
         dao.insertWallet(saved)
+    }
+
+    suspend fun recordCreditCardRepayment(
+        cardId: String,
+        sourceWalletId: String,
+        amount: Double,
+        statementId: String?,
+        idempotencyKey: String
+    ): CreditRepaymentResponse = withContext(Dispatchers.IO) {
+        require(amount.isFinite() && amount > 0.0) { "Enter a valid payment amount greater than zero." }
+        val response = apiService.recordCreditCardRepayment(
+            cardId,
+            CreditRepaymentRequest(
+                sourceWalletId = sourceWalletId,
+                amount = amount,
+                statementId = statementId,
+                idempotencyKey = idempotencyKey
+            )
+        ).requireData("credit card repayment")
+
+        val card = dao.getWalletById(cardId)
+            ?: throw IllegalStateException("The selected credit card is no longer available.")
+        val sourceWallet = dao.getWalletById(sourceWalletId)
+            ?: throw IllegalStateException("The selected source account is no longer available.")
+        dao.insertWallet(card.copy(outstandingBalance = response.outstandingBalance))
+        dao.insertWallet(sourceWallet.copy(balance = response.sourceWalletBalance))
+        response
+    }
+
+    suspend fun getCreditCardStatements(cardId: String): List<CreditStatement> =
+        withContext(Dispatchers.IO) {
+            apiService.getCreditCardStatements(cardId).requireData("credit card statements")
+        }
+
+    suspend fun generateCreditCardStatement(cardId: String): CreditStatement =
+        withContext(Dispatchers.IO) {
+            apiService.generateCreditCardStatement(cardId, CreditStatementRequest())
+                .requireData("credit card statement")
+        }
+
+    suspend fun getCreditCardActivity(cardId: String): List<CreditActivityItem> =
+        withContext(Dispatchers.IO) {
+            apiService.getCreditCardActivity(cardId).requireData("credit card activity")
+        }
+
+    suspend fun recordCreditCardRefund(
+        purchaseId: String,
+        amount: Double,
+        idempotencyKey: String
+    ): TransactionEntity = withContext(Dispatchers.IO) {
+        require(amount.isFinite() && amount > 0.0) { "Enter a valid refund amount greater than zero." }
+        val saved = apiService.recordCreditRefund(
+            purchaseId,
+            CreditRefundRequest(amount = amount, idempotencyKey = idempotencyKey)
+        ).requireData("credit card refund")
+        saved.toEntity().also { dao.insertTransaction(it) }
     }
 
     suspend fun addTransaction(transaction: TransactionEntity) = withContext(Dispatchers.IO) {
@@ -169,7 +245,6 @@ class ExpenseRepository(
     suspend fun deleteTransaction(transactionId: String) = withContext(Dispatchers.IO) {
         apiService.deleteTransaction(transactionId).requireSuccess("transaction deletion")
         dao.deleteTransactionById(transactionId)
-        syncWalletsFromServer()
     }
 
     suspend fun addGoal(goal: SavingsGoalEntity) = withContext(Dispatchers.IO) {
@@ -247,6 +322,7 @@ class ExpenseRepository(
 
     suspend fun clearAllUserData() = withContext(Dispatchers.IO) {
         dao.clearWallets()
+        dao.clearCardDisplayBalances()
         dao.clearTransactions()
         dao.clearGoals()
         dao.clearBudgetConfig()
@@ -295,10 +371,18 @@ class ExpenseRepository(
         cardNumber = cardNumber,
         cardType = cardType,
         cardBrand = cardBrand,
+        cardName = cardName,
         expiryDate = expiryDate,
         cardHolderName = cardHolderName,
         balance = balance,
         bankName = bankName,
+        creditLimit = creditLimit,
+        outstandingBalance = outstandingBalance,
+        statementClosingDay = statementClosingDay,
+        paymentDueDay = paymentDueDay,
+        minimumPaymentAmount = minimumPaymentAmount,
+        creditTermsConfigured = creditTermsConfigured,
+        timezone = timezone,
         designPreset = designId,
         primaryColor = primaryColor,
         secondaryColor = secondaryColor,
@@ -316,10 +400,18 @@ class ExpenseRepository(
             bankName = bankName,
             cardType = cardType,
             cardBrand = cardBrand.orEmpty(),
+            cardName = cardName.orEmpty(),
             cardNumber = cardNumber,
             cardHolderName = cardHolderName,
             expiryDate = expiryDate.orEmpty(),
             balance = balance,
+            creditLimit = creditLimit,
+            outstandingBalance = outstandingBalance,
+            statementClosingDay = statementClosingDay,
+            paymentDueDay = paymentDueDay,
+            minimumPaymentAmount = minimumPaymentAmount,
+            creditTermsConfigured = creditTermsConfigured,
+            timezone = timezone ?: "UTC",
             primaryColor = primaryColor ?: "#1A1A2E",
             secondaryColor = secondaryColor ?: "#16213E",
             designId = designPreset.orEmpty(),
@@ -342,7 +434,11 @@ class ExpenseRepository(
         description = description,
         date = date.replace(" ", "T").take(16),
         isRecurring = isRecurring,
-        walletId = walletId.takeIf(String::isNotBlank)
+        walletId = walletId.takeIf(String::isNotBlank),
+        transactionKind = transactionKind,
+        idempotencyKey = idempotencyKey,
+        statementId = statementId,
+        relatedTransactionId = relatedTransactionId
     )
 
     private fun ServerTransaction.toEntity(): TransactionEntity {
@@ -358,7 +454,11 @@ class ExpenseRepository(
             date = date?.replace("T", " ")?.take(16).orEmpty(),
             timestamp = timestamp,
             isRecurring = isRecurring,
-            walletId = walletId.orEmpty()
+            walletId = walletId.orEmpty(),
+            transactionKind = transactionKind,
+            idempotencyKey = idempotencyKey,
+            statementId = statementId,
+            relatedTransactionId = relatedTransactionId
         )
     }
 
@@ -418,10 +518,14 @@ class ExpenseRepository(
         return payload.data ?: throw IllegalStateException("The server returned no $resource data.")
     }
 
-    private fun Response<ApiResponse<Unit>>.requireSuccess(resource: String) {
+    private fun Response<ApiActionResponse>.requireSuccess(resource: String) {
         val payload = body()
-        if (!isSuccessful || payload?.success != true) {
+        if (!isSuccessful) {
             throw apiError(resource, code(), payload?.message)
         }
+        if (payload == null) {
+            throw IllegalStateException("The server returned no confirmation for $resource.")
+        }
+        if (!payload.success) throw apiError(resource, code(), payload.message)
     }
 }

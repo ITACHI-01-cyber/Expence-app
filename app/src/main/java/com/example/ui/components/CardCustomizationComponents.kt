@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -67,6 +68,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -97,14 +99,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.WalletEntity
+import com.example.analytics.calculateCreditCardSummary
 import com.example.ui.theme.AppTheme
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
+import java.text.NumberFormat
+import java.util.Locale
 
 @Composable
 fun FintechPrimaryButton(
@@ -356,6 +362,21 @@ fun parseColorSafe(hex: String?, fallback: Color): Color {
     }
 }
 
+private fun formatCardBalance(balance: Double, currencySymbol: String): String {
+    val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("en-IN")).apply {
+        minimumFractionDigits = 2
+        maximumFractionDigits = 2
+    }
+    return "$currencySymbol${formatter.format(balance)}"
+}
+
+internal fun parseCardBalanceInput(input: String): Double? {
+    val validAmount =
+        Regex("""^(?:\d+|\d{1,3}(?:,\d{2})*,\d{3}|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$""")
+    if (!validAmount.matches(input)) return null
+    return input.replace(",", "").toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
+}
+
 /**
  * Large Interactive Customizable Payment Card View
  * - Displays the real wallet financial info (cardBrand, Google Pay, UPI id / masked number, expiry, holder name, balance)
@@ -365,6 +386,7 @@ fun parseColorSafe(hex: String?, fallback: Color): Color {
 fun CustomizablePaymentCardView(
     wallet: WalletEntity,
     currencySymbol: String = "₹",
+    displayBalance: Double = wallet.balance,
     isFrozen: Boolean = false,
     overrideTheme: String? = null,
     overridePrimaryColor: String? = null,
@@ -374,6 +396,9 @@ fun CustomizablePaymentCardView(
     overrideCardStyle: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val isCreditCard = wallet.cardType.equals("credit", ignoreCase = true)
+    val creditSummary = calculateCreditCardSummary(wallet)
+    val balanceToDisplay = if (isCreditCard) creditSummary?.availableCredit else displayBalance
     val theme = overrideTheme ?: wallet.cardTheme.ifBlank { wallet.designId }
     val primaryHex = overridePrimaryColor ?: wallet.primaryColor
     val secondaryHex = overrideSecondaryColor ?: wallet.secondaryColor
@@ -555,12 +580,13 @@ fun CustomizablePaymentCardView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Balance: ",
+                                text = if (isCreditCard) "Available: " else "Balance: ",
                                 color = Color.White.copy(alpha = 0.7f),
                                 fontSize = 11.sp
                             )
                             Text(
-                                text = "$currencySymbol${String.format("%,.2f", wallet.balance)}",
+                                text = balanceToDisplay?.let { formatCardBalance(it, currencySymbol) }
+                                    ?: "Setup required",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
@@ -1047,11 +1073,14 @@ fun MiniCardPresetItem(
 fun CardCustomizationScreen(
     wallet: WalletEntity,
     currencySymbol: String,
+    displayBalance: Double?,
     onSaveCustomization: (walletId: String, theme: String, primaryColor: String, secondaryColor: String, accentColor: String, artwork: String, cardStyle: String) -> Unit,
+    onSaveDisplayBalance: (walletId: String, balance: Double, onComplete: (Boolean) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Current live customization state initialized from existing wallet data
+    val isCreditCard = wallet.cardType.equals("credit", ignoreCase = true)
     var selectedTheme by remember { mutableStateOf(wallet.cardTheme.ifBlank { wallet.designId }) }
     var selectedPrimaryColor by remember { mutableStateOf(wallet.primaryColor) }
     var selectedSecondaryColor by remember { mutableStateOf(wallet.secondaryColor) }
@@ -1060,8 +1089,43 @@ fun CardCustomizationScreen(
     var selectedStyle by remember { mutableStateOf(wallet.cardStyle) }
     var activeTab by remember { mutableStateOf("gallery") } // "gallery", "colors", "artwork", "style"
     var isSaving by remember { mutableStateOf(false) }
+    var savedDisplayBalance by remember(wallet.id, displayBalance) {
+        mutableStateOf(displayBalance ?: wallet.balance)
+    }
+    var balanceInput by remember(wallet.id, displayBalance) {
+        mutableStateOf((displayBalance ?: wallet.balance).toString())
+    }
+    var isSavingBalance by remember { mutableStateOf(false) }
+    var balanceError by remember { mutableStateOf<String?>(null) }
+    var balanceSaved by remember { mutableStateOf(false) }
 
     val colors = AppTheme.colors
+    val currentDisplayBalance = savedDisplayBalance
+    val saveDisplayBalance = {
+        val parsed = parseCardBalanceInput(balanceInput)
+        if (parsed == null) {
+            balanceError = "Enter a valid non-negative amount, such as 10,000 or 1,60,000."
+            balanceSaved = false
+        } else {
+            balanceError = null
+            balanceSaved = false
+            isSavingBalance = true
+            onSaveDisplayBalance(wallet.id, parsed) { confirmed ->
+                isSavingBalance = false
+                if (confirmed) {
+                    savedDisplayBalance = parsed
+                    balanceInput = parsed.toString()
+                    balanceSaved = true
+                    balanceError = null
+                }
+            }
+        }
+    }
+    val cancelDisplayBalanceEdit = {
+        balanceInput = currentDisplayBalance.toString()
+        balanceError = null
+        balanceSaved = false
+    }
 
     Surface(
         color = colors.background,
@@ -1159,6 +1223,7 @@ fun CardCustomizationScreen(
                             CustomizablePaymentCardView(
                                 wallet = wallet,
                                 currencySymbol = currencySymbol,
+                                displayBalance = currentDisplayBalance,
                                 overrideTheme = selectedTheme,
                                 overridePrimaryColor = selectedPrimaryColor,
                                 overrideSecondaryColor = selectedSecondaryColor,
@@ -1197,6 +1262,27 @@ fun CardCustomizationScreen(
                                 selectedStyle = selectedStyle,
                                 onSelectStyle = { selectedStyle = it }
                             )
+
+                            if (!isCreditCard) {
+                                CardBalanceSettingsSection(
+                                    currentDisplayBalance = currentDisplayBalance,
+                                    actualBalance = wallet.balance,
+                                    balanceInput = balanceInput,
+                                    currencySymbol = currencySymbol,
+                                    isSaving = isSavingBalance,
+                                    error = balanceError,
+                                    saved = balanceSaved,
+                                    onBalanceInputChange = {
+                                        balanceInput = it.filter { char ->
+                                            char.isDigit() || char == ',' || char == '.'
+                                        }
+                                        balanceError = null
+                                        balanceSaved = false
+                                    },
+                                    onSave = saveDisplayBalance,
+                                    onCancel = cancelDisplayBalanceEdit
+                                )
+                            }
 
                             Spacer(modifier = Modifier.weight(1f, fill = false))
 
@@ -1242,6 +1328,7 @@ fun CardCustomizationScreen(
                             CustomizablePaymentCardView(
                                 wallet = wallet,
                                 currencySymbol = currencySymbol,
+                                displayBalance = currentDisplayBalance,
                                 overrideTheme = selectedTheme,
                                 overridePrimaryColor = selectedPrimaryColor,
                                 overrideSecondaryColor = selectedSecondaryColor,
@@ -1274,6 +1361,27 @@ fun CardCustomizationScreen(
                             onSelectStyle = { selectedStyle = it }
                         )
 
+                        if (!isCreditCard) {
+                            CardBalanceSettingsSection(
+                                currentDisplayBalance = currentDisplayBalance,
+                                actualBalance = wallet.balance,
+                                balanceInput = balanceInput,
+                                currencySymbol = currencySymbol,
+                                isSaving = isSavingBalance,
+                                error = balanceError,
+                                saved = balanceSaved,
+                                onBalanceInputChange = {
+                                    balanceInput = it.filter { char ->
+                                        char.isDigit() || char == ',' || char == '.'
+                                    }
+                                    balanceError = null
+                                    balanceSaved = false
+                                },
+                                onSave = saveDisplayBalance,
+                                onCancel = cancelDisplayBalanceEdit
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(10.dp))
 
                         // 3. Save Button
@@ -1297,6 +1405,137 @@ fun CardCustomizationScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardBalanceSettingsSection(
+    currentDisplayBalance: Double,
+    actualBalance: Double,
+    balanceInput: String,
+    currencySymbol: String,
+    isSaving: Boolean,
+    error: String?,
+    saved: Boolean,
+    onBalanceInputChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val colors = AppTheme.colors
+    val parsedAmount = parseCardBalanceInput(balanceInput)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.surfaceBorder, RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Card Balance",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = colors.textCrispWhite
+        )
+        Text(
+            text = "Display-only balance for this card preview. It does not change real wallet funds, transaction history, or top-up amounts.",
+            fontSize = 12.sp,
+            color = colors.textMutedLavender
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Current displayed balance", fontSize = 12.sp, color = colors.textMutedLavender)
+            Text(
+                formatCardBalance(currentDisplayBalance, currencySymbol),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.textCrispWhite
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Actual wallet balance", fontSize = 12.sp, color = colors.textMutedLavender)
+            Text(
+                formatCardBalance(actualBalance, currencySymbol),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textCrispWhite
+            )
+        }
+
+        OutlinedTextField(
+            value = balanceInput,
+            onValueChange = onBalanceInputChange,
+            label = { Text("Set a new card balance ($currencySymbol)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            enabled = !isSaving,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("card_display_balance_input")
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("50", "10,000", "1,60,000").forEach { preset ->
+                OutlinedButton(
+                    onClick = { onBalanceInputChange(preset) },
+                    enabled = !isSaving,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 4.dp
+                    )
+                ) {
+                    Text("$currencySymbol$preset", fontSize = 12.sp)
+                }
+            }
+        }
+
+        error?.let {
+            Text(text = it, color = DangerRed, fontSize = 12.sp)
+        }
+        if (saved) {
+            Text(
+                text = "Display balance saved on this device.",
+                color = SuccessGreen,
+                fontSize = 12.sp
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCancel,
+                enabled = !isSaving,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Cancel")
+            }
+            Button(
+                onClick = onSave,
+                enabled = !isSaving && parsedAmount != null,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("save_card_display_balance_btn")
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Save Balance")
                 }
             }
         }
@@ -1591,12 +1830,15 @@ private fun CustomizationControlsSection(
 fun CardDetailsBottomSheet(
     wallet: WalletEntity,
     currencySymbol: String,
+    displayBalance: Double = wallet.balance,
     onCustomizeClick: () -> Unit,
     onTopUpClick: () -> Unit,
     onDeleteClick: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val colors = AppTheme.colors
+    val creditSummary = calculateCreditCardSummary(wallet)
+    val isCreditCard = wallet.cardType.equals("credit", ignoreCase = true)
     var isFrozen by remember { mutableStateOf(false) }
 
     Surface(
@@ -1640,8 +1882,33 @@ fun CardDetailsBottomSheet(
             CustomizablePaymentCardView(
                 wallet = wallet,
                 currencySymbol = currencySymbol,
+                displayBalance = displayBalance,
                 isFrozen = isFrozen
             )
+
+            if (isCreditCard) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        creditSummary?.let {
+                            "Limit ${formatCardBalance(wallet.creditLimit ?: 0.0, currencySymbol)} · " +
+                                if (it.creditBalance > 0.0) {
+                                    "Credit balance ${formatCardBalance(it.creditBalance, currencySymbol)}"
+                                } else {
+                                    "Owed ${formatCardBalance(wallet.outstandingBalance ?: 0.0, currencySymbol)}"
+                                }
+                        } ?: "Credit terms are not configured",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textCrispWhite
+                    )
+                    Text(
+                        creditSummary?.let { "Available credit ${formatCardBalance(it.availableCredit, currencySymbol)} · Utilization ${"%.1f".format(it.utilizationPercent)}%" }
+                            ?: "Set issuer limit and outstanding balance to enable credit features.",
+                        fontSize = 11.sp,
+                        color = colors.textMutedLavender
+                    )
+                }
+            }
 
             // Primary Actions: [ Customize Card ] & [ Top Up ]
             Row(
@@ -1673,28 +1940,30 @@ fun CardDetailsBottomSheet(
                     )
                 }
 
-                OutlinedButton(
-                    onClick = onTopUpClick,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, colors.surfaceBorder),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("top_up_card_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        tint = colors.brandColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Top Up",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.5.sp,
-                        color = colors.brandColor
-                    )
+                if (!isCreditCard) {
+                    OutlinedButton(
+                        onClick = onTopUpClick,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, colors.surfaceBorder),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("top_up_card_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = colors.brandColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Top Up",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = colors.brandColor
+                        )
+                    }
                 }
             }
 

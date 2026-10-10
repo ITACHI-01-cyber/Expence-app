@@ -249,6 +249,7 @@ fun TransactionItemRow(
     modifier: Modifier = Modifier
 ) {
     val colors = AppTheme.colors
+    val isRefund = transaction.transactionKind.equals("refund", ignoreCase = true)
     val isExpense = transaction.type.equals("expense", ignoreCase = true)
     val catColor = getCategoryColor(transaction.category)
     val catIcon = getCategoryIcon(transaction.category)
@@ -350,10 +351,10 @@ fun TransactionItemRow(
         }
 
         Text(
-            text = "${if (isExpense) "-" else "+"}${formatCurrency(transaction.amount, currencySymbol)}",
+            text = "${if (isRefund) "+" else if (isExpense) "-" else "+"}${formatCurrency(kotlin.math.abs(transaction.amount), currencySymbol)}",
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
-            color = if (isExpense) DangerRed else SuccessGreen,
+            color = if (isExpense && !isRefund) DangerRed else SuccessGreen,
             letterSpacing = (-0.2).sp
         )
     }

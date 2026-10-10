@@ -58,7 +58,6 @@ import com.example.ui.theme.AppTheme
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.TextCrispWhite
-import com.example.viewmodel.DailyExpensePoint
 
 @Composable
 fun DashboardScreen(
@@ -66,9 +65,10 @@ fun DashboardScreen(
     wallets: List<WalletEntity>,
     recentTransactions: List<TransactionEntity>,
     categoryExpenses: List<CategoryExpense>,
-    dailyExpenses: List<DailyExpensePoint>,
     goals: List<SavingsGoalEntity>,
     currencySymbol: String,
+    isTransactionsLoading: Boolean,
+    transactionLoadError: String?,
     onAddCard: () -> Unit,
     onTopUpCard: (WalletEntity) -> Unit,
     onEditBudget: () -> Unit,
@@ -126,9 +126,10 @@ fun DashboardScreen(
 
         // 5. Expense Statistics Trend Chart
         ExpenseStatsChart(
-            points = dailyExpenses,
+            transactions = recentTransactions,
             currencySymbol = currencySymbol,
-            onViewDetailsClick = onViewAllTransactions
+            isLoading = isTransactionsLoading,
+            loadError = transactionLoadError
         )
 
         // 6. Category Breakdown with Time Tabs

@@ -101,6 +101,18 @@ the website is `{"success": boolean, "data": ..., "message"?: string}`.
   successful server responses, clears/replaces cached lists on sync, and clears
   per-user cached records on logout/account change. Failed writes are surfaced
   instead of being treated as successful local-only writes.
+- The wallet `balance` returned by the API is the authoritative account amount.
+  The editable card-preview amount is stored separately in Room by wallet ID,
+  is cleared with account data, and is never sent to wallet or transaction
+  endpoints; dashboard totals, transaction history, and top-ups continue using
+  the server wallet balance.
+- Endpoints whose website contract only consumes the `success`/`message`
+  envelope use a typed status response rather than `ApiResponse<Unit>`, for
+  which Moshi cannot create a JSON converter. Transaction updates use the
+  server ID in the `PUT /transactions/{id}` path and cache the returned record;
+  transaction deletes remove the cached record only after a successful
+  `DELETE /transactions/{id}` envelope. Empty or unsuccessful responses leave
+  the transaction cache unchanged.
 - Login, registration OTP, forgot-password/reset, transactions, wallets/cards,
   budget, goals, dashboard summary, and the website's user-settings fields are
   wired to the audited endpoints. The diagnostics screen only performs

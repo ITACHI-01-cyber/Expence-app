@@ -27,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -62,6 +63,7 @@ import com.example.ui.theme.SuccessGreen
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 // ── 1. Add / Edit Transaction Dialog ──
 @OptIn(ExperimentalLayoutApi::class)
@@ -70,17 +72,35 @@ fun AddEditTransactionDialog(
     initialTransaction: TransactionEntity? = null,
     wallets: List<WalletEntity>,
     currencySymbol: String,
+    initialWalletId: String? = null,
+    creditPurchaseMode: Boolean = false,
+    isSaving: Boolean = false,
+    isDeleting: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (type: String, amount: Double, category: String, description: String, date: String, isRecurring: Boolean, walletId: String) -> Unit,
+    onSave: (type: String, amount: Double, category: String, description: String, date: String, isRecurring: Boolean, walletId: String, idempotencyKey: String) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
+    val idempotencyKey = remember(initialWalletId, initialTransaction?.id) {
+        UUID.randomUUID().toString()
+    }
+    val eligiblePaymentWallets = wallets.filter {
+        !it.cardType.equals("credit", ignoreCase = true) || it.creditTermsConfigured ||
+            initialTransaction != null
+    }
     var type by remember { mutableStateOf(initialTransaction?.type ?: "expense") }
     var amountStr by remember { mutableStateOf(if (initialTransaction != null) initialTransaction.amount.toString() else "") }
     var category by remember { mutableStateOf(initialTransaction?.category ?: "Groceries") }
     var customCategory by remember { mutableStateOf("") }
     var description by remember { mutableStateOf(initialTransaction?.description ?: "") }
     var isRecurring by remember { mutableStateOf(initialTransaction?.isRecurring ?: false) }
-    var selectedWalletId by remember { mutableStateOf(initialTransaction?.walletId ?: wallets.firstOrNull()?.id ?: "") }
+    var selectedWalletId by remember(initialWalletId, initialTransaction?.walletId, eligiblePaymentWallets) {
+        mutableStateOf(
+            initialWalletId
+                ?: initialTransaction?.walletId
+                ?: eligiblePaymentWallets.firstOrNull()?.id
+                ?: ""
+        )
+    }
     var walletDropdownExpanded by remember { mutableStateOf(false) }
 
     val defaultCategories = if (type == "expense") {
@@ -89,7 +109,7 @@ fun AddEditTransactionDialog(
         listOf("Salary", "Investment", "Freelance", "Gift", "Refund", "Other")
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
         Card(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -115,13 +135,24 @@ fun AddEditTransactionDialog(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onDismiss,
+                        enabled = !isSaving,
+                        modifier = Modifier.size(28.dp)
+                    ) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                if (creditPurchaseMode) {
+                    Text(
+                        "Credit card purchase · recorded as an expense funded by credit, not deducted from cash now",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                } else {
                 // Expense / Income Switcher
                 Row(
                     modifier = Modifier
@@ -147,7 +178,6 @@ fun AddEditTransactionDialog(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
-
                     Surface(
                         onClick = { type = "income"; if (category == "Groceries") category = "Salary" },
                         shape = RoundedCornerShape(10.dp),
@@ -165,6 +195,7 @@ fun AddEditTransactionDialog(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -185,8 +216,17 @@ fun AddEditTransactionDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Wallet / Account Picker
-                if (wallets.isNotEmpty()) {
-                    val currentWallet = wallets.find { it.id == selectedWalletId } ?: wallets.first()
+                if (eligiblePaymentWallets.isNotEmpty()) {
+                    val currentWallet = eligiblePaymentWallets.find { it.id == selectedWalletId }
+                        ?: eligiblePaymentWallets.first()
+                    if (creditPurchaseMode) {
+                        Text(
+                            text = "Credit card: ${currentWallet.bankName} · ${currentWallet.cardBrand} ·•••• ${currentWallet.cardNumber.takeLast(4)}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
                     Text(
                         text = "Linked Wallet / Account",
                         fontSize = 12.sp,
@@ -222,7 +262,7 @@ fun AddEditTransactionDialog(
                             expanded = walletDropdownExpanded,
                             onDismissRequest = { walletDropdownExpanded = false }
                         ) {
-                            wallets.forEach { w ->
+                            eligiblePaymentWallets.forEach { w ->
                                 DropdownMenuItem(
                                     text = {
                                         Text("${w.bankName} (${w.cardType.uppercase()}) - ${formatCurrency(w.balance, currencySymbol)}")
@@ -234,8 +274,15 @@ fun AddEditTransactionDialog(
                                 )
                             }
                         }
+                        }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
+                } else if (wallets.isNotEmpty()) {
+                    Text(
+                        "Set up a credit limit and outstanding balance before using a credit card for purchases.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
                 }
 
                 // Category Selection Chips
@@ -321,11 +368,20 @@ fun AddEditTransactionDialog(
                     if (onDelete != null) {
                         OutlinedButton(
                             onClick = onDelete,
+                            enabled = !isSaving,
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed),
                             modifier = Modifier.testTag("tx_delete_btn")
                         ) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete")
+                            if (isDeleting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = DangerRed
+                                )
+                            } else {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete")
+                            }
                         }
                     }
 
@@ -338,20 +394,32 @@ fun AddEditTransactionDialog(
                                 } else {
                                     formatToIsoLocalDateTime(null)
                                 }
-                                onSave(type, amt, category, description, dStr, isRecurring, selectedWalletId)
-                                onDismiss()
+                                onSave(type, amt, category, description, dStr, isRecurring, selectedWalletId, idempotencyKey)
                             }
                         },
+                        enabled = !isSaving && (amountStr.toDoubleOrNull() ?: 0.0) > 0.0,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("tx_save_btn")
                     ) {
-                        Text(
-                            text = if (initialTransaction != null) "Update Transaction" else "Save Transaction",
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isSaving && !isDeleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text(
+                                text = when {
+                                    isDeleting -> "Deleting transaction..."
+                                    initialTransaction != null -> "Update Transaction"
+                                    else -> "Save Transaction"
+                                },
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -461,8 +529,11 @@ fun AddEditWalletDialog(
 
                 OutlinedTextField(
                     value = cardNumber,
-                    onValueChange = { cardNumber = it },
-                    label = { Text(if (cardType == "upi") "UPI ID (e.g. user@paytm)" else "Card Number / Last 4 Digits") },
+                    onValueChange = {
+                        cardNumber = if (cardType == "upi") it.take(100) else it.filter(Char::isDigit).takeLast(4)
+                    },
+                    label = { Text(if (cardType == "upi") "UPI ID (e.g. user@paytm)" else "Last four digits only") },
+                    supportingText = { if (cardType != "upi" && cardType != "cash") Text("Never enter a full card number, CVV, or PIN.") },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -494,15 +565,23 @@ fun AddEditWalletDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = balanceStr,
-                    onValueChange = { balanceStr = it },
-                    label = { Text("Initial Balance") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                if (cardType.equals("credit", ignoreCase = true)) {
+                    Text(
+                        "Credit limit and outstanding debt are configured separately after adding this card.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = balanceStr,
+                        onValueChange = { balanceStr = it },
+                        label = { Text("Initial Balance") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -545,8 +624,9 @@ fun AddEditWalletDialog(
 
                 Button(
                     onClick = {
-                        val bal = balanceStr.toDoubleOrNull() ?: 0.0
-                        onSave(bankName, cardType, cardBrand, cardNumber, cardHolderName, expiryDate, bal, designId, "#1A1A2E", "#16213E")
+                        val bal = if (cardType.equals("credit", ignoreCase = true)) 0.0 else balanceStr.toDoubleOrNull() ?: 0.0
+                        val safeIdentifier = if (cardType == "upi") cardNumber.trim() else cardNumber.filter(Char::isDigit).takeLast(4)
+                        onSave(bankName, cardType, cardBrand, safeIdentifier, cardHolderName, expiryDate, bal, designId, "#1A1A2E", "#16213E")
                         onDismiss()
                     },
                     shape = RoundedCornerShape(12.dp),

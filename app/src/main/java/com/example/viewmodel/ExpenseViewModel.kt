@@ -13,6 +13,8 @@ import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
 import com.example.model.WalletEntity
 import com.example.network.ForgotPasswordRequest
+import com.example.network.CreditActivityItem
+import com.example.network.CreditStatement
 import com.example.network.LoginRequest
 import com.example.network.NetworkClient
 import com.example.network.RegisterRequest
@@ -20,11 +22,13 @@ import com.example.network.ResetPasswordRequest
 import com.example.network.TokenManager
 import com.example.network.VerifyOtpRequest
 import com.example.repository.ExpenseRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -47,23 +51,6 @@ enum class AuthPhase {
     CREATE_NEW_PASSWORD,
     PASSWORD_RESET_SUCCESS
 }
-
-data class DailyExpensePoint(
-    val dayLabel: String,
-    val amount: Double,
-    val dayOfMonth: Int
-)
-
-data class BudgetPlannerStats(
-    val totalIncome: Double,
-    val totalExpense: Double,
-    val totalBills: Double,
-    val savings: Double,
-    val regularExpense: Double,
-    val availableBalance: Double,
-    val highestExpenseCategory: String,
-    val highestExpenseAmount: Double
-)
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -91,11 +78,36 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    private val _transactionSyncError = MutableStateFlow<String?>(null)
+    val transactionSyncError: StateFlow<String?> = _transactionSyncError.asStateFlow()
+
+    private val _isTransactionOperationInProgress = MutableStateFlow(false)
+    val isTransactionOperationInProgress: StateFlow<Boolean> =
+        _isTransactionOperationInProgress.asStateFlow()
+    private val _isTransactionDeleteInProgress = MutableStateFlow(false)
+    val isTransactionDeleteInProgress: StateFlow<Boolean> =
+        _isTransactionDeleteInProgress.asStateFlow()
+
     private val _serverConnected = MutableStateFlow(false)
     val serverConnected: StateFlow<Boolean> = _serverConnected.asStateFlow()
 
     private val _operationErrorMessage = MutableStateFlow<String?>(null)
     val operationErrorMessage: StateFlow<String?> = _operationErrorMessage.asStateFlow()
+
+    private val _operationSuccessMessage = MutableStateFlow<String?>(null)
+    val operationSuccessMessage: StateFlow<String?> = _operationSuccessMessage.asStateFlow()
+
+    private val _creditStatements = MutableStateFlow<Map<String, List<CreditStatement>>>(emptyMap())
+    val creditStatements: StateFlow<Map<String, List<CreditStatement>>> = _creditStatements.asStateFlow()
+
+    private val _creditActivity = MutableStateFlow<Map<String, List<CreditActivityItem>>>(emptyMap())
+    val creditActivity: StateFlow<Map<String, List<CreditActivityItem>>> = _creditActivity.asStateFlow()
+
+    private val _creditDataLoading = MutableStateFlow(false)
+    val creditDataLoading: StateFlow<Boolean> = _creditDataLoading.asStateFlow()
+
+    private val _creditRepaymentInProgress = MutableStateFlow(false)
+    val creditRepaymentInProgress: StateFlow<Boolean> = _creditRepaymentInProgress.asStateFlow()
 
     // Forgot Password & OTP State
     private val _otpEmail = MutableStateFlow("")
@@ -169,6 +181,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     // Repository Flows
     val wallets: StateFlow<List<WalletEntity>> = repository.wallets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cardDisplayBalances: StateFlow<Map<String, Double>> = repository.cardDisplayBalances
+        .map { balances -> balances.associate { it.walletId to it.balance } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val allTransactions: StateFlow<List<TransactionEntity>> = repository.transactions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -249,85 +265,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }.sortedByDescending { it.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Daily Expenses for Chart
-    val dailyExpenses: StateFlow<List<DailyExpensePoint>> = allTransactions.combine(userSettings) { txList, _ ->
-        val now = Calendar.getInstance()
-        val currentMonth = now.get(Calendar.MONTH)
-        val currentYear = now.get(Calendar.YEAR)
-        val daysInMonth = now.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-        val dayTotals = DoubleArray(daysInMonth + 1)
-        txList.forEach { tx ->
-            if (tx.type == "expense") {
-                val cal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
-                if (cal.get(Calendar.MONTH) == currentMonth && cal.get(Calendar.YEAR) == currentYear) {
-                    val day = cal.get(Calendar.DAY_OF_MONTH)
-                    if (day in 1..daysInMonth) {
-                        dayTotals[day] += tx.amount
-                    }
-                }
-            }
-        }
-
-        val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
-        val monthStr = monthFormat.format(now.time)
-
-        (1..daysInMonth).map { day ->
-            DailyExpensePoint(
-                dayLabel = "$monthStr $day",
-                amount = dayTotals[day],
-                dayOfMonth = day
-            )
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Budget Planner Computed Stats
-    val budgetPlannerStats: StateFlow<BudgetPlannerStats> = combine(
-        allTransactions, dashboardSummary, categoryExpenses
-    ) { txList, summary, catExpenses ->
-        val now = Calendar.getInstance()
-        val currentMonth = now.get(Calendar.MONTH)
-        val currentYear = now.get(Calendar.YEAR)
-
-        var tIncome = 0.0
-        var tExpense = 0.0
-        var tBills = 0.0
-
-        txList.forEach { tx ->
-            val cal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
-            if (cal.get(Calendar.MONTH) == currentMonth && cal.get(Calendar.YEAR) == currentYear) {
-                if (tx.type == "income") {
-                    tIncome += tx.amount
-                } else if (tx.type == "expense") {
-                    tExpense += tx.amount
-                    if (tx.isRecurring) {
-                        tBills += tx.amount
-                    }
-                }
-            }
-        }
-
-        val income = if (summary.monthlyIncome > 0) summary.monthlyIncome else tIncome
-        val savings = (income - tExpense).coerceAtLeast(0.0)
-        val regular = (tExpense - tBills).coerceAtLeast(0.0)
-        val highest = catExpenses.firstOrNull()
-
-        BudgetPlannerStats(
-            totalIncome = income,
-            totalExpense = tExpense,
-            totalBills = tBills,
-            savings = savings,
-            regularExpense = regular,
-            availableBalance = summary.availableBalance,
-            highestExpenseCategory = highest?.category ?: "None",
-            highestExpenseAmount = highest?.amount ?: 0.0
-        )
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        BudgetPlannerStats(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "None", 0.0)
-    )
-
     // ─────────────────────────────────────────────────────────────────────────
     // Live Server Sync & Backend Diagnostics
     // ─────────────────────────────────────────────────────────────────────────
@@ -355,7 +292,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _isSyncing.value = true
             try {
-                val res = repository.syncAllFromServer()
+                val res = repository.syncAllFromServer { transactionResult ->
+                    _transactionSyncError.value = transactionResult.exceptionOrNull()?.let {
+                        "Could not refresh transactions: ${it.localizedMessage ?: "Please try again."}"
+                    }
+                }
                 _serverConnected.value = res.isSuccess
                 if (res.isFailure) {
                     val error = res.exceptionOrNull()
@@ -372,6 +313,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearOperationError() {
         _operationErrorMessage.value = null
+    }
+
+    fun clearOperationSuccess() {
+        _operationSuccessMessage.value = null
     }
 
     private fun reportOperationError(error: Throwable) {
@@ -397,6 +342,47 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 _operationErrorMessage.value = null
             } catch (error: Exception) {
                 reportOperationError(error)
+            }
+        }
+    }
+
+    private fun runTransactionRepositoryOperation(
+        operation: suspend () -> Unit,
+        onComplete: (Boolean) -> Unit,
+        isDelete: Boolean = false
+    ) {
+        if (_isTransactionOperationInProgress.value) {
+            _operationErrorMessage.value = "A transaction change is already in progress."
+            onComplete(false)
+            return
+        }
+
+        viewModelScope.launch {
+            _isTransactionOperationInProgress.value = true
+            _isTransactionDeleteInProgress.value = isDelete
+            var confirmed = false
+            try {
+                operation()
+                confirmed = true
+                _operationErrorMessage.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportOperationError(error)
+            } finally {
+                _isTransactionOperationInProgress.value = false
+                _isTransactionDeleteInProgress.value = false
+            }
+
+            onComplete(confirmed)
+            if (confirmed) {
+                val refreshResult = repository.syncWalletsFromServer()
+                refreshResult.exceptionOrNull()?.let { error ->
+                    reportOperationError(error)
+                    _operationErrorMessage.value =
+                        "The transaction change was confirmed, but wallet balances could not be refreshed. " +
+                            (_operationErrorMessage.value ?: "")
+                }
             }
         }
     }
@@ -803,6 +789,125 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateWallet(
+        wallet: WalletEntity,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.updateWallet(wallet)
+                _operationErrorMessage.value = null
+                onComplete(true)
+            } catch (error: Exception) {
+                reportOperationError(error)
+                onComplete(false)
+            }
+        }
+    }
+
+    fun loadCreditCardData(cardId: String) {
+        viewModelScope.launch {
+            _creditDataLoading.value = true
+            try {
+                refreshCreditCardData(cardId)
+            } catch (error: Exception) {
+                reportOperationError(error)
+            } finally {
+                _creditDataLoading.value = false
+            }
+        }
+    }
+
+    fun loadCreditCardsData(cardIds: List<String>) {
+        viewModelScope.launch {
+            _creditDataLoading.value = true
+            try {
+                cardIds.forEach { cardId -> refreshCreditCardData(cardId) }
+            } catch (error: Exception) {
+                reportOperationError(error)
+            } finally {
+                _creditDataLoading.value = false
+            }
+        }
+    }
+
+    fun generateCreditCardStatement(cardId: String) {
+        viewModelScope.launch {
+            _creditDataLoading.value = true
+            try {
+                repository.generateCreditCardStatement(cardId)
+                refreshCreditCardData(cardId)
+                _operationErrorMessage.value = null
+            } catch (error: Exception) {
+                reportOperationError(error)
+            } finally {
+                _creditDataLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun refreshCreditCardData(cardId: String) {
+        val statements = repository.getCreditCardStatements(cardId)
+        val activity = repository.getCreditCardActivity(cardId)
+        _creditStatements.value = _creditStatements.value + (cardId to statements)
+        _creditActivity.value = _creditActivity.value + (cardId to activity)
+    }
+
+    fun recordCreditCardRepayment(
+        cardId: String,
+        sourceWalletId: String,
+        amount: Double,
+        statementId: String?,
+        idempotencyKey: String,
+        onComplete: (Boolean) -> Unit
+    ) {
+        if (_creditRepaymentInProgress.value) {
+            _operationErrorMessage.value = "A card repayment is already in progress."
+            onComplete(false)
+            return
+        }
+        viewModelScope.launch {
+            _creditRepaymentInProgress.value = true
+            var confirmed = false
+            try {
+                repository.recordCreditCardRepayment(
+                    cardId,
+                    sourceWalletId,
+                    amount,
+                    statementId,
+                    idempotencyKey
+                )
+                confirmed = true
+                _operationErrorMessage.value = null
+                _operationSuccessMessage.value =
+                    "Repayment recorded in the app. This does not confirm payment to the card issuer."
+            } catch (error: Exception) {
+                reportOperationError(error)
+            } finally {
+                _creditRepaymentInProgress.value = false
+            }
+            onComplete(confirmed)
+            if (confirmed) loadCreditCardData(cardId)
+        }
+    }
+
+    fun saveCardDisplayBalance(
+        walletId: String,
+        balance: Double,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.saveCardDisplayBalance(walletId, balance)
+                _operationErrorMessage.value = null
+                onComplete(true)
+            } catch (error: Exception) {
+                reportOperationError(error)
+                onComplete(false)
+            }
+        }
+    }
+
     fun logout() {
         _isAuthenticated.value = false
         _serverToken.value = null
@@ -853,9 +958,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         description: String,
         date: String,
         isRecurring: Boolean,
-        walletId: String
+        walletId: String,
+        idempotencyKey: String? = null,
+        onComplete: (Boolean) -> Unit = {}
     ) {
-        runRepositoryOperation {
+        runTransactionRepositoryOperation(operation = {
             val newTx = TransactionEntity(
                 type = type,
                 amount = amount,
@@ -864,18 +971,82 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 date = date,
                 timestamp = System.currentTimeMillis(),
                 isRecurring = isRecurring,
-                walletId = walletId
+                walletId = walletId,
+                transactionKind = if (wallets.value.find { it.id == walletId }
+                        ?.cardType.equals("credit", ignoreCase = true)
+                ) "credit_purchase" else "standard",
+                idempotencyKey = idempotencyKey
             )
             repository.addTransaction(newTx)
+            if (wallets.value.any {
+                    it.id == walletId && it.cardType.equals("credit", ignoreCase = true)
+                }
+            ) {
+                loadCreditCardData(walletId)
+            }
+        }, onComplete = onComplete)
+    }
+
+    fun updateTransaction(
+        transaction: TransactionEntity,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        runTransactionRepositoryOperation(
+            operation = {
+                repository.updateTransaction(transaction)
+                if (wallets.value.any {
+                        it.id == transaction.walletId && it.cardType.equals("credit", ignoreCase = true)
+                    }
+                ) {
+                    loadCreditCardData(transaction.walletId)
+                }
+            },
+            onComplete = onComplete
+        )
+    }
+
+    fun deleteTransaction(id: String, onComplete: (Boolean) -> Unit = {}) {
+        runTransactionRepositoryOperation(
+            operation = {
+                val transaction = allTransactions.value.firstOrNull { it.id == id }
+                repository.deleteTransaction(id)
+                if (transaction != null && wallets.value.any {
+                        it.id == transaction.walletId && it.cardType.equals("credit", ignoreCase = true)
+                    }
+                ) {
+                    loadCreditCardData(transaction.walletId)
+                }
+            },
+            onComplete = onComplete,
+            isDelete = true
+        )
+    }
+
+    fun recordCreditCardRefund(
+        purchaseId: String,
+        amount: Double,
+        idempotencyKey: String,
+        onComplete: (Boolean) -> Unit
+    ) {
+        val purchase = allTransactions.value.firstOrNull { it.id == purchaseId }
+        if (purchase == null || purchase.transactionKind != "purchase") {
+            _operationErrorMessage.value = "The original credit purchase is no longer available."
+            onComplete(false)
+            return
         }
-    }
-
-    fun updateTransaction(transaction: TransactionEntity) {
-        runRepositoryOperation { repository.updateTransaction(transaction) }
-    }
-
-    fun deleteTransaction(id: String) {
-        runRepositoryOperation { repository.deleteTransaction(id) }
+        runTransactionRepositoryOperation(
+            operation = {
+                repository.recordCreditCardRefund(purchaseId, amount, idempotencyKey)
+                loadCreditCardData(purchase.walletId)
+            },
+            onComplete = { confirmed ->
+                if (confirmed) {
+                    _operationSuccessMessage.value =
+                        "Purchase refund recorded and linked to its original credit transaction."
+                }
+                onComplete(confirmed)
+            }
+        )
     }
 
     // ─────────────────────────────────────────────────────────────────────────

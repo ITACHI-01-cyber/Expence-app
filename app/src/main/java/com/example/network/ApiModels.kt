@@ -57,6 +57,13 @@ data class ApiResponse<T>(
 )
 
 @JsonClass(generateAdapter = true)
+data class ApiActionResponse(
+    @Json(name = "success") val success: Boolean = false,
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "message") val message: String? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class LoginData(
     @Json(name = "token") val token: String? = null,
     @Json(name = "theme") val theme: String? = null,
@@ -93,7 +100,11 @@ data class ServerTransaction(
     @Json(name = "date") val date: String? = null,
     @Json(name = "isRecurring") val isRecurring: Boolean = false,
     @Json(name = "walletId") val walletId: String? = null,
-    @Json(name = "paymentMethod") val paymentMethod: String? = null
+    @Json(name = "paymentMethod") val paymentMethod: String? = null,
+    @Json(name = "transactionKind") val transactionKind: String = "standard",
+    @Json(name = "idempotencyKey") val idempotencyKey: String? = null,
+    @Json(name = "statementId") val statementId: String? = null,
+    @Json(name = "relatedTransactionId") val relatedTransactionId: String? = null
 )
 
 fun formatToIsoLocalDateTime(dateStr: String?, timestamp: Long = System.currentTimeMillis()): String {
@@ -133,10 +144,18 @@ data class ServerWallet(
     @Json(name = "cardNumber") val cardNumber: String = "",
     @Json(name = "cardType") val cardType: String = "debit",
     @Json(name = "cardBrand") val cardBrand: String? = null,
+    @Json(name = "cardName") val cardName: String? = null,
     @Json(name = "expiryDate") val expiryDate: String? = null,
     @Json(name = "cardHolderName") val cardHolderName: String = "",
     @Json(name = "balance") val balance: Double = 0.0,
     @Json(name = "bankName") val bankName: String = "Bank",
+    @Json(name = "creditLimit") val creditLimit: Double? = null,
+    @Json(name = "outstandingBalance") val outstandingBalance: Double? = null,
+    @Json(name = "statementClosingDay") val statementClosingDay: Int? = null,
+    @Json(name = "paymentDueDay") val paymentDueDay: Int? = null,
+    @Json(name = "minimumPaymentAmount") val minimumPaymentAmount: Double? = null,
+    @Json(name = "creditTermsConfigured") val creditTermsConfigured: Boolean = false,
+    @Json(name = "timezone") val timezone: String? = null,
     @Json(name = "designPreset") val designPreset: String? = null,
     @Json(name = "primaryColor") val primaryColor: String? = null,
     @Json(name = "secondaryColor") val secondaryColor: String? = null,
@@ -144,6 +163,71 @@ data class ServerWallet(
     @Json(name = "cardIcon") val cardIcon: String? = null,
     @Json(name = "backSignatureText") val backSignatureText: String? = null,
     @Json(name = "backContactInfo") val backContactInfo: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditRepaymentRequest(
+    @Json(name = "sourceWalletId") val sourceWalletId: String,
+    @Json(name = "amount") val amount: Double,
+    @Json(name = "statementId") val statementId: String? = null,
+    @Json(name = "idempotencyKey") val idempotencyKey: String,
+    @Json(name = "date") val date: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditRefundRequest(
+    @Json(name = "amount") val amount: Double,
+    @Json(name = "idempotencyKey") val idempotencyKey: String,
+    @Json(name = "date") val date: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditRepaymentResponse(
+    @Json(name = "id") val id: String,
+    @Json(name = "walletId") val walletId: String,
+    @Json(name = "sourceWalletId") val sourceWalletId: String,
+    @Json(name = "statementId") val statementId: String? = null,
+    @Json(name = "amount") val amount: Double,
+    @Json(name = "date") val date: String,
+    @Json(name = "transactionKind") val transactionKind: String,
+    @Json(name = "idempotencyKey") val idempotencyKey: String,
+    @Json(name = "outstandingBalance") val outstandingBalance: Double,
+    @Json(name = "sourceWalletBalance") val sourceWalletBalance: Double,
+    @Json(name = "replayed") val replayed: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditStatementRequest(
+    @Json(name = "asOfDate") val asOfDate: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditStatement(
+    @Json(name = "id") val id: String,
+    @Json(name = "userId") val userId: String,
+    @Json(name = "walletId") val walletId: String,
+    @Json(name = "periodStart") val periodStart: String,
+    @Json(name = "periodEnd") val periodEnd: String,
+    @Json(name = "generatedAt") val generatedAt: String,
+    @Json(name = "timezone") val timezone: String,
+    @Json(name = "statementClosingDay") val statementClosingDay: Int,
+    @Json(name = "dueDate") val dueDate: String,
+    @Json(name = "statementBalance") val statementBalance: Double,
+    @Json(name = "minimumPaymentAmount") val minimumPaymentAmount: Double? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CreditActivityItem(
+    @Json(name = "id") val id: String,
+    @Json(name = "transactionKind") val transactionKind: String,
+    @Json(name = "amount") val amount: Double,
+    @Json(name = "date") val date: String,
+    @Json(name = "category") val category: String? = null,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "sourceWalletId") val sourceWalletId: String? = null,
+    @Json(name = "statementId") val statementId: String? = null,
+    @Json(name = "idempotencyKey") val idempotencyKey: String? = null,
+    @Json(name = "relatedTransactionId") val relatedTransactionId: String? = null
 )
 
 @JsonClass(generateAdapter = true)
