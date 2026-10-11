@@ -969,7 +969,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 category = category,
                 description = description,
                 date = date,
-                timestamp = System.currentTimeMillis(),
+                timestamp = com.example.analytics.parseDateStringToMillis(date) ?: System.currentTimeMillis(),
                 isRecurring = isRecurring,
                 walletId = walletId,
                 transactionKind = if (wallets.value.find { it.id == walletId }
