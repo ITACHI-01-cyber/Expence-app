@@ -482,20 +482,8 @@ class ExpenseRepository(
         year = year
     )
 
-    private fun parseTimestamp(value: String?): Long? {
-        if (value.isNullOrBlank()) return null
-        val patterns = listOf("yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm")
-        for (pattern in patterns) {
-            try {
-                return SimpleDateFormat(pattern, Locale.US).parse(value.take(pattern.length))?.time
-            } catch (_: IllegalArgumentException) {
-                continue
-            } catch (_: java.text.ParseException) {
-                continue
-            }
-        }
-        return null
-    }
+    private fun parseTimestamp(value: String?): Long? =
+        com.example.analytics.parseDateStringToMillis(value)
 
     private fun apiError(resource: String, code: Int, message: String?): IllegalStateException {
         val detail = message?.takeIf(String::isNotBlank) ?: when (code) {

@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -54,7 +57,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import com.example.analytics.AnalyticsPeriod
+import com.example.ui.components.ChartMetricType
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.example.analytics.FinancialAnalytics
 import com.example.analytics.calculateFinancialAnalytics
 import com.example.analytics.resolveAnalyticsDateRange
@@ -68,9 +87,6 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 
 @Composable
 fun BudgetPlannerScreen(
@@ -107,22 +123,14 @@ fun BudgetPlannerScreen(
     androidx.compose.runtime.LaunchedEffect(creditCardIds) {
         if (creditCardIds.isNotEmpty()) onLoadCreditCardsData(creditCardIds)
     }
-    val localZone = ZoneId.systemDefault()
-    val rangeStart = Instant.ofEpochMilli(dateRange.startDateMillis).atZone(localZone).toLocalDate()
-    val rangeEnd = Instant.ofEpochMilli(dateRange.endDateMillis).atZone(localZone).toLocalDate()
     val creditLiability = creditCards.sumOf { it.outstandingBalance ?: 0.0 }
     val totalCreditLimit = creditCards.sumOf { it.creditLimit ?: 0.0 }
     val creditRepaymentsInPeriod = creditCards.sumOf { card ->
         creditActivity[card.id].orEmpty()
             .filter { it.transactionKind.equals("repayment", ignoreCase = true) }
             .sumOf { item ->
-                val activityDate = runCatching {
-                    LocalDateTime.parse(item.date)
-                        .atZone(ZoneId.of(card.timezone))
-                        .withZoneSameInstant(localZone)
-                        .toLocalDate()
-                }.getOrNull()
-                if (activityDate != null && !activityDate.isBefore(rangeStart) && !activityDate.isAfter(rangeEnd)) {
+                val activityMillis = com.example.analytics.parseDateStringToMillis(item.date)
+                if (activityMillis != null && activityMillis in dateRange.startDateMillis..dateRange.endDateMillis) {
                     item.amount
                 } else {
                     0.0
@@ -134,7 +142,6 @@ fun BudgetPlannerScreen(
         dateRange.startDateMillis,
         dateRange.endDateMillis
     )
-    val recurringTransactions = analytics.recurringTransactions
     val dateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
     val rangeLabel = "${dateFormatter.format(dateRange.startDateMillis)} – ${dateFormatter.format(dateRange.endDateMillis)}"
     val expenseColor = DangerRed
@@ -172,6 +179,7 @@ fun BudgetPlannerScreen(
                     ) {
                         listOf(
                             AnalyticsPeriod.LAST_7_DAYS to "7 days",
+                            AnalyticsPeriod.LAST_12_DAYS to "12 days",
                             AnalyticsPeriod.LAST_30_DAYS to "30 days",
                             AnalyticsPeriod.LAST_6_MONTHS to "6 months",
                             AnalyticsPeriod.CUSTOM to "Custom"
@@ -367,49 +375,7 @@ fun BudgetPlannerScreen(
                 }
             }
 
-            item {
-                CardPanel {
-                    SectionHeading("Income & savings", "Cash flow is not the same as savings or wallet balance")
-                    Spacer(Modifier.height(10.dp))
-                    if (analytics.totalIncome == 0.0) {
-                        Text("No income recorded for this period", color = colors.textMutedLavender, fontSize = 13.sp)
-                        Text("Income-dependent metrics are unavailable. Actual savings cannot be calculated from transactions alone.", color = colors.textMutedLavender, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-                    } else {
-                        Text(
-                            "Net cash flow: ${formatAnalyticsAmount(analytics.netCashFlow, currencySymbol)}",
-                            color = if (analytics.netCashFlow >= 0) incomeColor else expenseColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        Text("This is income minus expenses for the selected period; it does not account for transfers, opening balances, or other savings.", color = colors.textMutedLavender, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-                    }
-                }
-            }
 
-            item {
-                CardPanel {
-                    SectionHeading(
-                        "Recurring transactions",
-                        "Only expenses marked as monthly are shown with their recorded amount. Due dates and payment status are not stored."
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (recurringTransactions.isEmpty()) {
-                        EmptyMessage("No marked recurring transactions", "Mark a monthly bill or subscription as recurring when recording it.")
-                    } else {
-                        recurringTransactions.forEachIndexed { index, transaction ->
-                            TransactionSummaryRow(
-                                transaction = transaction,
-                                currencySymbol = currencySymbol,
-                                dateFormatter = dateFormatter,
-                                recurring = true
-                            )
-                            if (index < recurringTransactions.lastIndex) {
-                                HorizontalDivider(color = colors.surfaceBorder, modifier = Modifier.padding(vertical = 9.dp))
-                            }
-                        }
-                    }
-                }
-            }
 
             item {
                 CardPanel {
@@ -556,48 +522,341 @@ private fun ChartLegend(color: Color, label: String) {
 @Composable
 private fun TrendChart(analytics: FinancialAnalytics, currencySymbol: String) {
     val points = analytics.points
+    if (points.isEmpty()) return
+
     val textColor = AppTheme.colors.textMutedLavender
-    val maximum = points.flatMap { listOf(it.expenses, it.income) }.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
-    val axisMaximum = maximum * 1.15
-    Column {
-        Row(Modifier.fillMaxWidth().height(170.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(
-                Modifier.width(58.dp).fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.End
-            ) {
-                listOf(axisMaximum, axisMaximum / 2.0, 0.0).forEach {
-                    Text(formatAxisAmount(it, currencySymbol), color = textColor, fontSize = 9.sp, maxLines = 1)
-                }
-            }
-            Canvas(Modifier.weight(1f).fillMaxSize()) {
-                val left = 2.dp.toPx()
-                val right = size.width - 2.dp.toPx()
-                val top = 8.dp.toPx()
-                val bottom = size.height - 8.dp.toPx()
-                val width = right - left
-                val height = bottom - top
-                if (points.isEmpty()) return@Canvas
-                listOf(0f, 0.5f, 1f).forEach { fraction ->
-                    val y = top + height * fraction
-                    drawLine(textColor.copy(alpha = 0.2f), Offset(left, y), Offset(right, y), 1.dp.toPx())
-                }
-                fun plot(selector: (Int) -> Double, color: Color) {
-                    val path = Path()
-                    points.forEachIndexed { index, point ->
-                        val x = if (points.size == 1) left + width / 2f else left + width * index / (points.lastIndex)
-                        val y = bottom - (selector(index) / axisMaximum).toFloat() * height
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-                    drawPath(path, color, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                }
-                plot({ points[it].expenses }, DangerRed)
-                plot({ points[it].income }, SuccessGreen)
+    var selectedMetric by remember { mutableStateOf(ChartMetricType.EXPENSES) }
+
+    val values = remember(points, selectedMetric) {
+        points.map { point ->
+            when (selectedMetric) {
+                ChartMetricType.EXPENSES -> point.expenses
+                ChartMetricType.INCOME -> point.income
+                ChartMetricType.NET_FLOW -> point.netCashFlow
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf(0, points.size / 2, points.lastIndex).distinct().forEach { index ->
-                Text(points[index].dateLabel, color = textColor, fontSize = 9.sp)
+    }
+
+    val maxVal = remember(values) {
+        values.maxOrNull()?.takeIf { abs(it) > 0.0 } ?: 100.0
+    }
+    val minVal = remember(values) {
+        values.minOrNull()?.takeIf { it < 0.0 } ?: 0.0
+    }
+
+    val axisMax = if (maxVal > 0) maxVal * 1.18 else 100.0
+    val axisMin = if (minVal < 0) minVal * 1.15 else 0.0
+    val axisRange = (axisMax - axisMin).coerceAtLeast(1.0)
+
+    val axisLabels = listOf(
+        axisMax,
+        axisMin + axisRange * 0.5,
+        axisMin
+    )
+
+    var selectedIndex by remember(points, selectedMetric) {
+        val defaultIdx = values.indexOfMax().coerceIn(0, points.lastIndex)
+        mutableIntStateOf(defaultIdx)
+    }
+
+    val animProgress = remember { Animatable(0f) }
+    LaunchedEffect(selectedMetric, analytics.points) {
+        animProgress.snapTo(0f)
+        animProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
+        )
+    }
+
+    var chartWidthPx by remember { mutableFloatStateOf(1f) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Metric Switcher Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            ChartMetricType.entries.forEach { metric ->
+                val selected = selectedMetric == metric
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (selected) Color(0xFFA855F7).copy(alpha = 0.22f) else Color.Transparent,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { selectedMetric = metric }
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = metric.label,
+                        fontSize = 11.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) Color(0xFFA855F7) else textColor
+                    )
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp)
+                .background(Color(0xFF0F1118), RoundedCornerShape(20.dp))
+                .padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 12.dp)
+                .onGloballyPositioned { chartWidthPx = it.size.width.toFloat() }
+        ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(points, selectedMetric) {
+                                detectTapGestures { offset ->
+                                    selectedIndex = calculateClosestIndex(
+                                        xPx = offset.x,
+                                        widthPx = size.width.toFloat(),
+                                        count = points.size
+                                    )
+                                }
+                            }
+                            .pointerInput(points, selectedMetric) {
+                                detectDragGestures { change, _ ->
+                                    change.consume()
+                                    selectedIndex = calculateClosestIndex(
+                                        xPx = change.position.x,
+                                        widthPx = size.width.toFloat(),
+                                        count = points.size
+                                    )
+                                }
+                            }
+                    ) {
+                        val left = 6.dp.toPx()
+                        val right = size.width - 6.dp.toPx()
+                        val top = 34.dp.toPx()
+                        val bottom = size.height - 8.dp.toPx()
+                        val chartWidth = (right - left).coerceAtLeast(1f)
+                        val chartHeight = (bottom - top).coerceAtLeast(1f)
+                        val count = points.size
+
+                        // Gridlines
+                        listOf(0f, 0.5f, 1f).forEach { frac ->
+                            val y = top + chartHeight * frac
+                            drawLine(
+                                color = Color(0xFF2D3142).copy(alpha = 0.5f),
+                                start = Offset(left, y),
+                                end = Offset(right, y),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+
+                        val pointCoords = List(count) { i ->
+                            val x = if (count == 1) left + chartWidth / 2f
+                            else left + chartWidth * i / (count - 1)
+                            val normValue = ((values[i] - axisMin) / axisRange).toFloat()
+                            val y = bottom - (normValue * chartHeight)
+                            Offset(x, y)
+                        }
+
+                        // Vertical Gridlines
+                        pointCoords.forEach { pt ->
+                            drawLine(
+                                color = Color(0xFF2D3142).copy(alpha = 0.35f),
+                                start = Offset(pt.x, top),
+                                end = Offset(pt.x, bottom),
+                                strokeWidth = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                            )
+                        }
+
+                        if (count > 0) {
+                            val linePath = Path()
+                            linePath.moveTo(pointCoords[0].x, pointCoords[0].y)
+
+                            if (count == 1) {
+                                linePath.lineTo(pointCoords[0].x + 1f, pointCoords[0].y)
+                            } else {
+                                for (i in 0 until count - 1) {
+                                    val p0 = pointCoords[i]
+                                    val p1 = pointCoords[i + 1]
+                                    val dx = p1.x - p0.x
+                                    val ctrl1 = Offset(p0.x + dx * 0.45f, p0.y)
+                                    val ctrl2 = Offset(p0.x + dx * 0.55f, p1.y)
+                                    linePath.cubicTo(
+                                        ctrl1.x, ctrl1.y,
+                                        ctrl2.x, ctrl2.y,
+                                        p1.x, p1.y
+                                    )
+                                }
+                            }
+
+                            val areaPath = Path()
+                            areaPath.addPath(linePath)
+                            areaPath.lineTo(pointCoords.last().x, bottom)
+                            areaPath.lineTo(pointCoords.first().x, bottom)
+                            areaPath.close()
+
+                            val areaGradient = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFFA855F7).copy(alpha = 0.38f),
+                                    Color(0xFFA855F7).copy(alpha = 0.12f),
+                                    Color.Transparent
+                                ),
+                                startY = top,
+                                endY = bottom
+                            )
+
+                            clipRect(
+                                left = 0f,
+                                top = 0f,
+                                right = left + (chartWidth + 12.dp.toPx()) * animProgress.value,
+                                bottom = size.height
+                            ) {
+                                drawPath(path = areaPath, brush = areaGradient)
+
+                                drawPath(
+                                    path = linePath,
+                                    color = Color(0xFF8B5CF6).copy(alpha = 0.30f),
+                                    style = Stroke(
+                                        width = 6.dp.toPx(),
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round
+                                    )
+                                )
+
+                                drawPath(
+                                    path = linePath,
+                                    color = Color(0xFFA855F7),
+                                    style = Stroke(
+                                        width = 2.8.dp.toPx(),
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round
+                                    )
+                                )
+                            }
+
+                            val safeIndex = selectedIndex.coerceIn(0, count - 1)
+                            val selPt = pointCoords[safeIndex]
+
+                            // Crosshair
+                            drawLine(
+                                color = Color(0xFFA855F7).copy(alpha = 0.55f),
+                                start = Offset(selPt.x, top),
+                                end = Offset(selPt.x, bottom),
+                                strokeWidth = 1.5.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+                            )
+
+                            // Point Marker
+                            drawCircle(Color(0xFFA855F7).copy(alpha = 0.25f), 11.dp.toPx(), selPt)
+                            drawCircle(Color.White, 6.5.dp.toPx(), selPt)
+                            drawCircle(Color(0xFFA855F7), 4.5.dp.toPx(), selPt)
+                        }
+                    }
+
+                    // Floating Tooltip Above Point
+                    val safeIdx = selectedIndex.coerceIn(0, points.lastIndex)
+                    val activePoint = points[safeIdx]
+                    val activeVal = values[safeIdx]
+
+                    val formattedVal = formatAnalyticsAmount(activeVal, currencySymbol)
+                    val pointFraction = if (points.size > 1) safeIdx.toFloat() / (points.size - 1) else 0.5f
+
+                    Box(
+                        modifier = Modifier
+                            .align(
+                                when {
+                                    pointFraction < 0.25f -> Alignment.TopStart
+                                    pointFraction > 0.75f -> Alignment.TopEnd
+                                    else -> Alignment.TopCenter
+                                }
+                            )
+                            .offset {
+                                if (pointFraction >= 0.25f && pointFraction <= 0.75f) {
+                                    IntOffset(((pointFraction - 0.5f) * 160).roundToInt(), 0)
+                                } else {
+                                    IntOffset(0, 0)
+                                }
+                            }
+                            .background(Color(0xFF1E1B2E), RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = activePoint.dateLabel,
+                                color = AppTheme.colors.textMutedLavender,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text("•", color = Color(0xFFA855F7), fontSize = 11.sp)
+                            Text(
+                                text = "${selectedMetric.label}: $formattedVal",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Y-Axis Right Aligned
+                Column(
+                    modifier = Modifier
+                        .width(52.dp)
+                        .fillMaxHeight()
+                        .padding(top = 28.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.End
+                ) {
+                    axisLabels.forEach { amount ->
+                        Text(
+                            text = formatAxisAmount(amount, currencySymbol),
+                            color = textColor.copy(alpha = 0.8f),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            val step = when {
+                points.size > 20 -> 6
+                points.size > 10 -> 3
+                else -> 2
+            }
+            val displayIndices = (points.indices step step).toList()
+                .let { list -> if (points.lastIndex !in list) list + points.lastIndex else list }
+
+            displayIndices.forEach { index ->
+                Text(
+                    text = points[index].dateLabel,
+                    color = if (index == selectedIndex) Color(0xFFA855F7) else textColor,
+                    fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 10.sp
+                )
             }
         }
     }
@@ -611,16 +870,61 @@ private fun CategoryRow(
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(category, color = AppTheme.colors.textCrispWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Text("$amount  (${percentage.toOneDecimal()}%)", color = AppTheme.colors.textMutedLavender, fontSize = 11.sp)
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = category,
+                color = AppTheme.colors.textCrispWhite,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "$amount  (${percentage.toOneDecimal()}%)",
+                color = AppTheme.colors.textMutedLavender,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
         Spacer(Modifier.height(6.dp))
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(AppTheme.colors.surfaceVariant)) {
-            Box(Modifier.fillMaxWidth((percentage / 100.0).toFloat().coerceIn(0f, 1f)).height(6.dp).clip(CircleShape).background(color))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(AppTheme.colors.surfaceVariant)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth((percentage / 100.0).toFloat().coerceIn(0f, 1f))
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color)
+            )
         }
     }
+}
+
+private fun calculateClosestIndex(xPx: Float, widthPx: Float, count: Int): Int {
+    if (count <= 1 || widthPx <= 0f) return 0
+    val fraction = (xPx / widthPx).coerceIn(0f, 1f)
+    return (fraction * (count - 1)).roundToInt().coerceIn(0, count - 1)
+}
+
+private fun List<Double>.indexOfMax(): Int {
+    if (isEmpty()) return 0
+    var maxIdx = 0
+    var maxVal = this[0]
+    for (i in 1 until size) {
+        if (this[i] > maxVal) {
+            maxVal = this[i]
+            maxIdx = i
+        }
+    }
+    return maxIdx
 }
 
 @Composable
