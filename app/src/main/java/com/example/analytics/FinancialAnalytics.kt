@@ -10,7 +10,10 @@ data class DailyFinancialPoint(
     val dateLabel: String,
     val expenses: Double,
     val income: Double
-)
+) {
+    val netCashFlow: Double
+        get() = income - expenses
+}
 
 data class FinancialAnalytics(
     val points: List<DailyFinancialPoint>,
@@ -33,6 +36,7 @@ data class FinancialCategoryTotal(
 
 enum class AnalyticsPeriod {
     LAST_7_DAYS,
+    LAST_12_DAYS,
     LAST_30_DAYS,
     LAST_6_MONTHS,
     CUSTOM
@@ -53,6 +57,7 @@ fun resolveAnalyticsDateRange(
     val startDay = endDay.clone() as Calendar
     when (period) {
         AnalyticsPeriod.LAST_7_DAYS -> startDay.add(Calendar.DAY_OF_YEAR, -6)
+        AnalyticsPeriod.LAST_12_DAYS -> startDay.add(Calendar.DAY_OF_YEAR, -11)
         AnalyticsPeriod.LAST_30_DAYS -> startDay.add(Calendar.DAY_OF_YEAR, -29)
         AnalyticsPeriod.LAST_6_MONTHS -> {
             startDay.set(Calendar.DAY_OF_MONTH, 1)
@@ -95,6 +100,48 @@ fun calculateFinancialAnalytics(
     )
 }
 
+fun parseDateStringToMillis(value: String?): Long? {
+    if (value.isNullOrBlank()) return null
+    val clean = value.trim()
+    try {
+        if (clean.contains("T")) {
+            val normalized = if (clean.endsWith("Z") || clean.contains("+")) clean else "${clean}Z"
+            return java.time.Instant.parse(normalized).toEpochMilli()
+        }
+    } catch (_: Exception) {}
+
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd",
+        "dd MMM yyyy",
+        "d MMM yyyy"
+    )
+    for (pattern in patterns) {
+        try {
+            val format = SimpleDateFormat(pattern, Locale.US)
+            format.timeZone = java.util.TimeZone.getDefault()
+            val parsed = format.parse(clean.take(pattern.length))
+            if (parsed != null) return parsed.time
+        } catch (_: Exception) {}
+    }
+    return null
+}
+
+fun TransactionEntity.effectiveTimestamp(): Long {
+    val parsed = parseDateStringToMillis(date)
+    if (parsed != null && parsed > 0) {
+        if (timestamp <= 0 || kotlin.math.abs(parsed - timestamp) > 24 * 3600 * 1000L) {
+            return parsed
+        }
+    }
+    return if (timestamp > 0) timestamp else System.currentTimeMillis()
+}
+
 fun calculateFinancialAnalytics(
     transactions: List<TransactionEntity>,
     startDateMillis: Long,
@@ -134,7 +181,8 @@ fun calculateFinancialAnalytics(
             return@forEach
         }
 
-        dayCalendar.timeInMillis = transaction.timestamp
+        val effTimestamp = transaction.effectiveTimestamp()
+        dayCalendar.timeInMillis = effTimestamp
         dayCalendar.set(Calendar.HOUR_OF_DAY, 0)
         dayCalendar.set(Calendar.MINUTE, 0)
         dayCalendar.set(Calendar.SECOND, 0)
@@ -189,10 +237,10 @@ fun calculateFinancialAnalytics(
                 }
             )
         }.sortedByDescending { it.amount },
-        recentTransactions = inRangeTransactions.sortedByDescending { it.timestamp }.take(5),
+        recentTransactions = inRangeTransactions.sortedByDescending { it.effectiveTimestamp() }.take(5),
         recurringTransactions = inRangeTransactions
             .filter { it.isRecurring && it.type.equals("expense", ignoreCase = true) }
-            .sortedByDescending { it.timestamp }
+            .sortedByDescending { it.effectiveTimestamp() }
     )
 }
 
