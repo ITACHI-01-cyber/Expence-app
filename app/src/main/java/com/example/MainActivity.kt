@@ -32,6 +32,7 @@ import com.example.ui.components.AddEditTransactionDialog
 import com.example.ui.components.AddEditWalletDialog
 import com.example.ui.components.BottomNavBar
 import com.example.ui.components.EditBudgetDialog
+import com.example.ui.components.EditProfileDialog
 import com.example.ui.components.TopBar
 import com.example.ui.components.TopUpBalanceDialog
 import com.example.ui.screens.AuthScreen
@@ -122,6 +123,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
 
     var showAddGoalDialog by remember { mutableStateOf(false) }
     var selectedGoalToEdit by remember { mutableStateOf<SavingsGoalEntity?>(null) }
+    var showEditProfileDialog by remember { mutableStateOf(false) }
 
     ExpenceTrackTheme(darkTheme = isDark, accentColorName = accentColor) {
         if (!isAuthenticated) {
@@ -136,7 +138,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                         isSyncing = isSyncing,
                         onSyncClick = { viewModel.syncAllData() },
                         onAddTransactionClick = { showAddTransactionDialog = true },
-                        onProfileClick = { viewModel.setTab(ScreenTab.SETTINGS) }
+                        onProfileClick = { showEditProfileDialog = true }
                     )
                 },
                 bottomBar = {
@@ -325,7 +327,7 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
             AddEditWalletDialog(
                 initialWallet = null,
                 onDismiss = { showAddWalletDialog = false },
-                onSave = { bankName, cardType, cardBrand, cardNumber, cardHolderName, expiryDate, balance, designId, primaryColor, secondaryColor ->
+                onSave = { bankName, cardType, cardBrand, cardNumber, cardHolderName, expiryDate, balance, designId, primaryColor, secondaryColor, creditLimit, outstandingBalance, statementClosingDay, paymentDueDay ->
                     viewModel.addWallet(
                         bankName = bankName,
                         cardType = cardType,
@@ -336,7 +338,11 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                         initialBalance = balance,
                         designId = designId,
                         primaryColor = primaryColor,
-                        secondaryColor = secondaryColor
+                        secondaryColor = secondaryColor,
+                        creditLimit = creditLimit,
+                        outstandingBalance = outstandingBalance,
+                        statementClosingDay = statementClosingDay,
+                        paymentDueDay = paymentDueDay
                     )
                 }
             )
@@ -374,6 +380,16 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                 onDismiss = { showAddGoalDialog = false },
                 onSave = { title, amount, medium ->
                     viewModel.addGoal(title, amount, medium)
+                }
+            )
+        }
+
+        if (showEditProfileDialog) {
+            EditProfileDialog(
+                userSettings = userSettings,
+                onDismissRequest = { showEditProfileDialog = false },
+                onSaveProfile = { name, email, photoUri ->
+                    viewModel.updateProfile(name, email, photoUri)
                 }
             )
         }

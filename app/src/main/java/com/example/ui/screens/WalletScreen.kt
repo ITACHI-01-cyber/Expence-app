@@ -934,6 +934,31 @@ private fun CreditCardRepaymentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                if (parsedAmount != null && parsedAmount > 0.0) {
+                    val currentOutstanding = wallet.outstandingBalance ?: 0.0
+                    val currentLimit = wallet.creditLimit ?: 0.0
+                    val remainingOutstanding = (currentOutstanding - parsedAmount).coerceAtLeast(0.0)
+                    val updatedAvailableCredit = (currentLimit - currentOutstanding + parsedAmount).coerceAtMost(currentLimit)
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        CreditValueRow("Remaining outstanding", remainingOutstanding, currencySymbol, DangerRed)
+                        CreditValueRow("Available credit after payment", updatedAvailableCredit, currencySymbol, AppTheme.colors.brandColor)
+                        selectedSource?.let { src ->
+                            val remainingSourceBalance = src.balance - parsedAmount
+                            CreditValueRow("Source account balance after payment", remainingSourceBalance, currencySymbol, if (remainingSourceBalance < 0) DangerRed else AppTheme.colors.textCrispWhite)
+                        }
+                    }
+                }
+
                 Text("Apply to statement (optional)", color = AppTheme.colors.textMutedLavender, fontSize = 12.sp)
                 Box {
                     OutlinedButton(

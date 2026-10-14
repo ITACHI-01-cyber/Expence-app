@@ -934,15 +934,55 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     ) {
         runRepositoryOperation {
             val current = userSettings.value ?: UserSettingsEntity()
+            val newSettings = current.copy(
+                name = name,
+                email = email,
+                currency = currency,
+                currencyCode = currencyCodeForSymbol(currency),
+                theme = theme,
+                accentColor = accentColor
+            )
+            repository.saveUserSettings(newSettings)
+            com.example.network.TokenManager.saveUserInfo(
+                com.example.network.TokenManager.getUserId(),
+                name,
+                email,
+                newSettings.profilePictureUri
+            )
+        }
+    }
+
+    fun updateWallpaperSettings(wallpaperUri: String, darkness: Float) {
+        runRepositoryOperation {
+            val current = userSettings.value ?: UserSettingsEntity()
             repository.saveUserSettings(
                 current.copy(
-                    name = name,
-                    email = email,
-                    currency = currency,
-                    currencyCode = currencyCodeForSymbol(currency),
-                    theme = theme,
-                    accentColor = accentColor
+                    wallpaperUri = wallpaperUri,
+                    wallpaperDarkness = darkness
                 )
+            )
+        }
+    }
+
+    fun updateProfile(
+        name: String,
+        email: String = "",
+        profilePictureUri: String = ""
+    ) {
+        runRepositoryOperation {
+            val current = userSettings.value ?: UserSettingsEntity()
+            val newEmail = email.ifBlank { current.email }
+            val newSettings = current.copy(
+                name = name,
+                email = newEmail,
+                profilePictureUri = if (profilePictureUri.isNotBlank()) profilePictureUri else current.profilePictureUri
+            )
+            repository.saveUserSettings(newSettings)
+            com.example.network.TokenManager.saveUserInfo(
+                com.example.network.TokenManager.getUserId(),
+                name,
+                newEmail,
+                newSettings.profilePictureUri
             )
         }
     }
@@ -963,6 +1003,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         onComplete: (Boolean) -> Unit = {}
     ) {
         runTransactionRepositoryOperation(operation = {
+            val targetWallet = wallets.value.find { it.id == walletId }
+            val isCreditCard = targetWallet?.cardType.equals("credit", ignoreCase = true) == true
+
+            if (isCreditCard && targetWallet != null) {
+                val creditSummary = com.example.analytics.calculateCreditCardSummary(targetWallet)
+                if (creditSummary != null && amount > creditSummary.availableCredit) {
+                    val currSymbol = userSettings.value?.currency ?: "₹"
+                    val formattedAmt = "$currSymbol${String.format(java.util.Locale.getDefault(), "%.2f", amount)}"
+                    val formattedAvail = "$currSymbol${String.format(java.util.Locale.getDefault(), "%.2f", creditSummary.availableCredit)}"
+                    throw IllegalStateException("Purchase amount ($formattedAmt) exceeds available credit ($formattedAvail).")
+                }
+            }
+
             val newTx = TransactionEntity(
                 type = type,
                 amount = amount,
@@ -972,16 +1025,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 timestamp = com.example.analytics.parseDateStringToMillis(date) ?: System.currentTimeMillis(),
                 isRecurring = isRecurring,
                 walletId = walletId,
-                transactionKind = if (wallets.value.find { it.id == walletId }
-                        ?.cardType.equals("credit", ignoreCase = true)
-                ) "credit_purchase" else "standard",
+                transactionKind = if (isCreditCard) "credit_purchase" else "standard",
                 idempotencyKey = idempotencyKey
             )
             repository.addTransaction(newTx)
-            if (wallets.value.any {
-                    it.id == walletId && it.cardType.equals("credit", ignoreCase = true)
-                }
-            ) {
+
+            if (isCreditCard && targetWallet != null) {
+                val newOutstanding = (targetWallet.outstandingBalance ?: 0.0) + amount
+                repository.updateWallet(targetWallet.copy(outstandingBalance = newOutstanding))
                 loadCreditCardData(walletId)
             }
         }, onComplete = onComplete)
@@ -1063,9 +1114,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         initialBalance: Double,
         designId: String,
         primaryColor: String,
-        secondaryColor: String
+        secondaryColor: String,
+        creditLimit: Double? = null,
+        outstandingBalance: Double? = null,
+        statementClosingDay: Int? = null,
+        paymentDueDay: Int? = null
     ) {
         runRepositoryOperation {
+            val isCredit = cardType.equals("credit", ignoreCase = true)
+            val hasTerms = isCredit && creditLimit != null && creditLimit > 0
             repository.addWallet(
                 WalletEntity(
                     bankName = bankName,
@@ -1074,10 +1131,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     cardNumber = cardNumber,
                     cardHolderName = cardHolderName,
                     expiryDate = expiryDate,
-                    balance = initialBalance,
+                    balance = if (isCredit) 0.0 else initialBalance,
                     designId = designId,
                     primaryColor = primaryColor,
-                    secondaryColor = secondaryColor
+                    secondaryColor = secondaryColor,
+                    creditLimit = creditLimit,
+                    outstandingBalance = if (isCredit) (outstandingBalance ?: 0.0) else null,
+                    statementClosingDay = statementClosingDay,
+                    paymentDueDay = paymentDueDay,
+                    creditTermsConfigured = hasTerms
                 )
             )
         }

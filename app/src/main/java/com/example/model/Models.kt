@@ -89,9 +89,12 @@ data class UserSettingsEntity(
     val currency: String = "₹",
     val currencyCode: String = "INR",
     val theme: String = "dark", // "dark", "light", "system"
-    val accentColor: String = "purple", // "purple", "blue", "emerald", "rose"
+    val accentColor: String = "purple", // "purple", "blue", "emerald", "rose" or palette letter "A".."P"
     val isGuest: Boolean = true,
-    val gmailConnected: Boolean = false
+    val gmailConnected: Boolean = false,
+    val profilePictureUri: String = "",
+    val wallpaperUri: String = "",
+    val wallpaperDarkness: Float = 0.40f
 )
 
 data class DashboardSummary(
