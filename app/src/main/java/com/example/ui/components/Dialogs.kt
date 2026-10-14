@@ -265,7 +265,18 @@ fun AddEditTransactionDialog(
                             eligiblePaymentWallets.forEach { w ->
                                 DropdownMenuItem(
                                     text = {
-                                        Text("${w.bankName} (${w.cardType.uppercase()}) - ${formatCurrency(w.balance, currencySymbol)}")
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(width = 24.dp, height = 16.dp)
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(com.example.ui.theme.getCardGradient(w.designId, w.primaryColor, w.secondaryColor))
+                                            )
+                                            Text("${w.bankName} (${w.cardType.uppercase()}) - ${formatCurrency(w.balance, currencySymbol)}")
+                                        }
                                     },
                                     onClick = {
                                         selectedWalletId = w.id
@@ -432,7 +443,22 @@ fun AddEditTransactionDialog(
 fun AddEditWalletDialog(
     initialWallet: WalletEntity? = null,
     onDismiss: () -> Unit,
-    onSave: (bankName: String, cardType: String, cardBrand: String, cardNumber: String, cardHolderName: String, expiryDate: String, balance: Double, designId: String, primaryColor: String, secondaryColor: String) -> Unit
+    onSave: (
+        bankName: String,
+        cardType: String,
+        cardBrand: String,
+        cardNumber: String,
+        cardHolderName: String,
+        expiryDate: String,
+        balance: Double,
+        designId: String,
+        primaryColor: String,
+        secondaryColor: String,
+        creditLimit: Double?,
+        outstandingBalance: Double?,
+        statementClosingDay: Int?,
+        paymentDueDay: Int?
+    ) -> Unit
 ) {
     var bankName by remember { mutableStateOf(initialWallet?.bankName ?: "") }
     var cardType by remember { mutableStateOf(initialWallet?.cardType ?: "debit") }
@@ -442,6 +468,11 @@ fun AddEditWalletDialog(
     var expiryDate by remember { mutableStateOf(initialWallet?.expiryDate ?: "") }
     var balanceStr by remember { mutableStateOf(initialWallet?.balance?.toString() ?: "0") }
     var designId by remember { mutableStateOf(initialWallet?.designId ?: "midnight") }
+
+    var creditLimitStr by remember { mutableStateOf(initialWallet?.creditLimit?.toString() ?: "") }
+    var outstandingStr by remember { mutableStateOf(initialWallet?.outstandingBalance?.toString() ?: "0") }
+    var closingDayStr by remember { mutableStateOf(initialWallet?.statementClosingDay?.toString() ?: "20") }
+    var dueDayStr by remember { mutableStateOf(initialWallet?.paymentDueDay?.toString() ?: "10") }
 
     val themes = listOf(
         "midnight" to "Midnight",
@@ -566,11 +597,46 @@ fun AddEditWalletDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (cardType.equals("credit", ignoreCase = true)) {
-                    Text(
-                        "Credit limit and outstanding debt are configured separately after adding this card.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    OutlinedTextField(
+                        value = creditLimitStr,
+                        onValueChange = { creditLimitStr = it },
+                        label = { Text("Total Credit Limit (₹)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = outstandingStr,
+                        onValueChange = { outstandingStr = it },
+                        label = { Text("Opening Outstanding Balance (₹)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = closingDayStr,
+                            onValueChange = { closingDayStr = it },
+                            label = { Text("Closing Day (1–31)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = dueDayStr,
+                            onValueChange = { dueDayStr = it },
+                            label = { Text("Due Day (1–31)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
                 } else {
                     OutlinedTextField(
                         value = balanceStr,
@@ -624,9 +690,18 @@ fun AddEditWalletDialog(
 
                 Button(
                     onClick = {
-                        val bal = if (cardType.equals("credit", ignoreCase = true)) 0.0 else balanceStr.toDoubleOrNull() ?: 0.0
+                        val isCredit = cardType.equals("credit", ignoreCase = true)
+                        val bal = if (isCredit) 0.0 else balanceStr.toDoubleOrNull() ?: 0.0
+                        val limit = if (isCredit) creditLimitStr.toDoubleOrNull() else null
+                        val outstanding = if (isCredit) outstandingStr.toDoubleOrNull() else null
+                        val closingDay = if (isCredit) closingDayStr.toIntOrNull() else null
+                        val dueDay = if (isCredit) dueDayStr.toIntOrNull() else null
+
                         val safeIdentifier = if (cardType == "upi") cardNumber.trim() else cardNumber.filter(Char::isDigit).takeLast(4)
-                        onSave(bankName, cardType, cardBrand, safeIdentifier, cardHolderName, expiryDate, bal, designId, "#1A1A2E", "#16213E")
+                        onSave(
+                            bankName, cardType, cardBrand, safeIdentifier, cardHolderName, expiryDate, bal,
+                            designId, "#1A1A2E", "#16213E", limit, outstanding, closingDay, dueDay
+                        )
                         onDismiss()
                     },
                     shape = RoundedCornerShape(12.dp),

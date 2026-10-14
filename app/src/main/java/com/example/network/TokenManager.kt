@@ -11,6 +11,7 @@ object TokenManager {
     private const val KEY_USER_ID = "user_id"
     private const val KEY_USER_NAME = "user_name"
     private const val KEY_USER_EMAIL = "user_email"
+    private const val KEY_PROFILE_PICTURE_URI = "profile_picture_uri"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -51,17 +52,25 @@ object TokenManager {
         return cachedToken
     }
 
-    fun saveUserInfo(id: String?, name: String?, email: String?) {
-        prefs?.edit()
+    fun saveUserInfo(id: String?, name: String?, email: String?, profilePictureUri: String? = null) {
+        val editor = prefs?.edit()
             ?.putString(KEY_USER_ID, id)
             ?.putString(KEY_USER_NAME, name)
             ?.putString(KEY_USER_EMAIL, email)
-            ?.apply()
+        if (profilePictureUri != null) {
+            editor?.putString(KEY_PROFILE_PICTURE_URI, profilePictureUri)
+        }
+        editor?.apply()
+    }
+
+    fun saveProfilePictureUri(uri: String?) {
+        prefs?.edit()?.putString(KEY_PROFILE_PICTURE_URI, uri)?.apply()
     }
 
     fun getUserId(): String? = prefs?.getString(KEY_USER_ID, null)
     fun getUserName(): String? = prefs?.getString(KEY_USER_NAME, null)
     fun getUserEmail(): String? = prefs?.getString(KEY_USER_EMAIL, null)
+    fun getProfilePictureUri(): String? = prefs?.getString(KEY_PROFILE_PICTURE_URI, null)
 
     fun clear() {
         cachedToken = null
