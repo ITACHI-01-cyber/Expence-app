@@ -90,6 +90,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -471,6 +472,41 @@ fun CustomizablePaymentCardView(
                         )
                     )
             )
+
+            // Premium Recessed Black Leather Sleeve Pocket at Bottom
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val pocketPath = Path().apply {
+                    moveTo(0f, h * 0.50f)
+                    cubicTo(w * 0.28f, h * 0.38f, w * 0.72f, h * 0.38f, w, h * 0.50f)
+                    lineTo(w, h)
+                    lineTo(0f, h)
+                    close()
+                }
+
+                drawPath(
+                    path = pocketPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color(0xFF222533), Color(0xFF14161F), Color(0xFF0A0C10)),
+                        startY = h * 0.38f,
+                        endY = h
+                    )
+                )
+
+                val stitchPath = Path().apply {
+                    moveTo(0f, h * 0.50f)
+                    cubicTo(w * 0.28f, h * 0.38f, w * 0.72f, h * 0.38f, w, h * 0.50f)
+                }
+                drawPath(
+                    path = stitchPath,
+                    color = Color.White.copy(alpha = 0.60f),
+                    style = Stroke(
+                        width = 1.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                    )
+                )
+            }
 
             // Front Card Content
             Column(

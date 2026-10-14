@@ -184,24 +184,109 @@ val RoseLightColors = AppThemeColors(
     brandColor = Color(0xFFF43F5E)
 )
 
+data class CoordinatedPalette(
+    val letter: String,
+    val name: String,
+    val colors: List<Color>
+) {
+    val primary: Color get() = colors.getOrElse(0) { Color(0xFF6366F1) }
+    val secondary: Color get() = colors.getOrElse(1) { Color(0xFF818CF8) }
+    val accent: Color get() = colors.getOrElse(2) { Color(0xFFA855F7) }
+    val surface: Color get() = colors.getOrElse(3) { Color(0xFF151821) }
+}
+
+val AllCoordinatedPalettes = listOf(
+    CoordinatedPalette("A", "Plum Velvet", listOf(Color(0xFF4D3A4D), Color(0xFFBE5CA9), Color(0xFFD59CC5), Color(0xFFEADADA))),
+    CoordinatedPalette("B", "Cyan Ocean", listOf(Color(0xFF43D9E7), Color(0xFF3EC4D0), Color(0xFF393C83), Color(0xFF2A2C5F))),
+    CoordinatedPalette("C", "Crimson Ruby", listOf(Color(0xFF2B2024), Color(0xFFA80139), Color(0xFFFD0053), Color(0xFFFFFFFF))),
+    CoordinatedPalette("D", "Emerald Gold", listOf(Color(0xFFFFD716), Color(0xFF0DA574), Color(0xFF073358), Color(0xFF001F3E))),
+    CoordinatedPalette("E", "Electric Sky", listOf(Color(0xFF3B4A6B), Color(0xFF23B2DA), Color(0xFFF1D43A), Color(0xFFF23456))),
+    CoordinatedPalette("F", "Lavender Mint", listOf(Color(0xFF7A56D0), Color(0xFF4FC0E8), Color(0xFF5BE7C4), Color(0xFFF6F7FB))),
+    CoordinatedPalette("G", "Sapphire Pink", listOf(Color(0xFFDAEAF7), Color(0xFF0C8ABC), Color(0xFF124E96), Color(0xFFFF008E))),
+    CoordinatedPalette("H", "Lime Teal", listOf(Color(0xFFFFF5F4), Color(0xFFB1D430), Color(0xFF1A8B9D), Color(0xFF000000))),
+    CoordinatedPalette("I", "Slate Rust", listOf(Color(0xFF1A273A), Color(0xFF3E4A62), Color(0xFFC24D2C), Color(0xFFD9D9D7))),
+    CoordinatedPalette("J", "Citrus Leaf", listOf(Color(0xFFFAFFA3), Color(0xFFC6E772), Color(0xFF66D47E), Color(0xFF073835))),
+    CoordinatedPalette("K", "Peach Teal", listOf(Color(0xFFFFEED0), Color(0xFFF4C180), Color(0xFF00A79D), Color(0xFF007064))),
+    CoordinatedPalette("L", "Purple Mint", listOf(Color(0xFF9765C8), Color(0xFF099A97), Color(0xFF15CDA9), Color(0xFFF0E4E4))),
+    CoordinatedPalette("M", "Espresso Spice", listOf(Color(0xFFE2DED3), Color(0xFF857671), Color(0xFF4E413B), Color(0xFFFF6D24))),
+    CoordinatedPalette("N", "Sky Neon", listOf(Color(0xFF4A89AC), Color(0xFFACE5F6), Color(0xFFE3FCF9), Color(0xFFFAEE5A))),
+    CoordinatedPalette("O", "Sunset Violet", listOf(Color(0xFFED743F), Color(0xFFFFAF50), Color(0xFF423465), Color(0xFF824C97))),
+    CoordinatedPalette("P", "Forest Sage", listOf(Color(0xFF3F3F3F), Color(0xFF437A5B), Color(0xFFB4CD93), Color(0xFFFBF5B7)))
+)
+
+fun parseColorSafe(colorHex: String?, fallback: Color): Color {
+    if (colorHex.isNullOrBlank()) return fallback
+    return try {
+        val clean = colorHex.trim()
+        val hex = if (clean.startsWith("#")) clean else "#$clean"
+        Color(android.graphics.Color.parseColor(hex))
+    } catch (_: Exception) {
+        fallback
+    }
+}
+
+fun getCardGradient(designId: String, primaryColorHex: String = "", secondaryColorHex: String = ""): androidx.compose.ui.graphics.Brush {
+    val pCol = parseColorSafe(primaryColorHex, Color.Unspecified)
+    val sCol = parseColorSafe(secondaryColorHex, Color.Unspecified)
+
+    if (pCol != Color.Unspecified && sCol != Color.Unspecified) {
+        return androidx.compose.ui.graphics.Brush.linearGradient(listOf(pCol, sCol))
+    }
+
+    return when (designId.lowercase().trim()) {
+        "sunset" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardSunsetStart, CardSunsetEnd))
+        "aurora" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardAuroraStart, CardAuroraEnd))
+        "berry" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardBerryStart, CardBerryEnd))
+        "ocean", "ocean-gradient" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardOceanStart, CardOceanEnd))
+        "mint" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardMintStart, CardMintEnd))
+        "lavender" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardLavenderStart, CardLavenderEnd))
+        "glass" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardGlassStart, CardGlassEnd))
+        "silver", "minimal" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF94A3B8), Color(0xFF475569)))
+        "scenic" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF7A56D0), Color(0xFF4FC0E8)))
+        "fampay", "neon" -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF9B6DFF), Color(0xFF38BDF8)))
+        else -> androidx.compose.ui.graphics.Brush.linearGradient(listOf(CardMidnightStart, CardMidnightEnd))
+    }
+}
+
 /**
  * Returns the theme palette based on the selected accent name and mode.
  */
 fun getThemeColors(accentColorName: String, isDark: Boolean = true): AppThemeColors {
+    val matchedPalette = AllCoordinatedPalettes.firstOrNull { it.letter.equals(accentColorName, ignoreCase = true) }
+    val customAccent = matchedPalette?.primary
+
     return if (isDark) {
-        when (accentColorName.lowercase()) {
+        val base = when (accentColorName.lowercase()) {
             "blue" -> BlueThemeColors
             "emerald", "green" -> EmeraldThemeColors
             "rose", "red" -> RoseThemeColors
             else -> PurpleThemeColors
         }
+        if (customAccent != null) {
+            base.copy(
+                primaryAccent = customAccent,
+                primaryAccentLight = matchedPalette.secondary,
+                ctaButton = customAccent,
+                accentGlow = customAccent,
+                brandColor = matchedPalette.accent
+            )
+        } else base
     } else {
-        when (accentColorName.lowercase()) {
+        val base = when (accentColorName.lowercase()) {
             "blue" -> BlueLightColors
             "emerald", "green" -> EmeraldLightColors
             "rose", "red" -> RoseLightColors
             else -> PurpleLightColors
         }
+        if (customAccent != null) {
+            base.copy(
+                primaryAccent = customAccent,
+                primaryAccentLight = matchedPalette.secondary,
+                ctaButton = customAccent,
+                accentGlow = customAccent,
+                brandColor = matchedPalette.accent
+            )
+        } else base
     }
 }
 

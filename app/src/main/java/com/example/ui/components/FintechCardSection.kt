@@ -2,7 +2,7 @@ package com.example.ui.components
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,21 +33,21 @@ import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CreditCard
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,15 +61,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -79,18 +78,16 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.example.analytics.calculateCreditCardSummary
 import com.example.model.DashboardSummary
 import com.example.model.WalletEntity
 import com.example.ui.theme.AppTheme
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.getCardGradient
+import com.example.ui.theme.parseColorSafe
 
-/**
- * Clean Fintech Balance Area matching Reference Design:
- * - Label "Total Balance" with small eye toggle button
- * - Large dominant typography: e.g. ₹9,178.00
- * - Side-by-side Income & Spent indicators
- */
 @Composable
 fun FintechBalanceHeader(
     summary: DashboardSummary,
@@ -104,7 +101,6 @@ fun FintechBalanceHeader(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Label & Eye Visibility Toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -136,7 +132,6 @@ fun FintechBalanceHeader(
             }
         }
 
-        // Large Dominant Balance Number
         AnimatedContent(
             targetState = isBalanceVisible,
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
@@ -163,7 +158,6 @@ fun FintechBalanceHeader(
             }
         }
 
-        // Side-by-side Income and Spent Pills
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -262,13 +256,11 @@ fun FintechBalanceHeader(
 }
 
 /**
- * Realistic Dark Premium Payment Card:
- * - Black / dark charcoal card
- * - Textured / refined subtle gradient background
- * - Rounded corners 24dp
- * - Visa/Mastercard/RuPay branding
- * - EMV Chip & Contactless indicator
- * - Formatted card number & holder details
+ * Premium Card Sleeve Presentation with 3D Pop-out & Flip Animation:
+ * - Card sits partially inside textured dark leather card sleeve
+ * - Tap card to pop out & inspect Front and Back side
+ * - Shows distinct payment type badges (UPI, CASH, SAVINGS, DEBIT, CREDIT)
+ * - Saved card customization choices propagate instantly
  */
 @Composable
 fun FintechDigitalCard(
@@ -283,6 +275,8 @@ fun FintechDigitalCard(
     var activeIndex by remember(wallets) { mutableIntStateOf(0) }
     var isCardFrozen by remember { mutableStateOf(false) }
     var showFullNumbers by remember { mutableStateOf(false) }
+    var isPoppedOutModalOpen by remember { mutableStateOf(false) }
+    var isFlippedBack by remember { mutableStateOf(false) }
 
     val safeIndex = if (wallets.isNotEmpty()) activeIndex.coerceIn(0, wallets.size - 1) else 0
     val activeWallet = wallets.getOrNull(safeIndex)
@@ -291,7 +285,6 @@ fun FintechDigitalCard(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Main Digital Card Container
         if (activeWallet == null) {
             // Empty State Card
             Card(
@@ -342,25 +335,11 @@ fun FintechDigitalCard(
                 }
             }
         } else {
-            // Premium Dark Payment Card
-            val cardPrimary = parseColorSafe(activeWallet.primaryColor, Color(0xFF222733))
-            val cardSecondary = parseColorSafe(activeWallet.secondaryColor, Color(0xFF0D0F16))
-            val cardAccent = parseColorSafe(activeWallet.accentColor, Color(0xFF38BDF8))
-
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = cardSecondary),
-                border = BorderStroke(1.dp, if (isCardFrozen) Color(0xFF38BDF8).copy(alpha = 0.5f) else cardAccent.copy(alpha = 0.35f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+            // Card Sleeve Container
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(214.dp)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(24.dp),
-                        ambientColor = cardPrimary.copy(alpha = 0.30f),
-                        spotColor = Color.Black.copy(alpha = 0.50f)
-                    )
+                    .height(240.dp)
                     .pointerInput(wallets.size) {
                         if (wallets.size > 1) {
                             var totalDrag = 0f
@@ -379,195 +358,93 @@ fun FintechDigitalCard(
                             )
                         }
                     }
-                    .testTag("fintech_active_card")
             ) {
+                // Payment Card sitting inside Sleeve (Top ~60% exposed)
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = if (isCardFrozen) {
-                                    listOf(Color(0xFF0F1E2E), Color(0xFF09131C), Color(0xFF03070B))
-                                } else {
-                                    listOf(cardPrimary, cardSecondary)
-                                },
-                                start = Offset(0f, 0f),
-                                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                            )
-                        )
-                        .padding(22.dp)
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .align(Alignment.TopCenter)
+                        .clickable {
+                            isFlippedBack = false
+                            isPoppedOutModalOpen = true
+                        }
                 ) {
-                    // Artwork illustration canvas
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawCustomCardArtwork(
-                            artwork = activeWallet.artwork,
-                            accentColor = cardAccent,
-                            primaryColor = cardPrimary,
-                            secondaryColor = cardSecondary
+                    CustomizablePaymentCardView(
+                        wallet = activeWallet,
+                        currencySymbol = currencySymbol,
+                        isFrozen = isCardFrozen
+                    )
+                }
+
+                // Dark Textured Leather Card Sleeve Front Panel
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(115.dp)
+                        .align(Alignment.BottomCenter)
+                        .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 16.dp, topEnd = 16.dp))
+                        .background(Color(0xFF161822))
+                        .border(
+                            1.dp,
+                            Color.White.copy(alpha = 0.15f),
+                            RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 16.dp, topEnd = 16.dp)
+                        )
+                        .clickable {
+                            isFlippedBack = false
+                            isPoppedOutModalOpen = true
+                        }
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
+                ) {
+                    // Fine stitching line effect at top edge
+                    Canvas(modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.TopCenter)) {
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.22f),
+                            start = Offset(0f, 2f),
+                            end = Offset(size.width, 2f),
+                            strokeWidth = 1.2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
                         )
                     }
 
-                    Column(
+                    Row(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Top Row: Brand & Contactless / GPay
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Card Brand Logo & Theme Badge
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val brand = activeWallet.cardBrand.ifBlank { "Visa" }
-                                if (brand.contains("master", ignoreCase = true)) {
-                                    MastercardFintechLogo()
-                                } else if (brand.contains("rupay", ignoreCase = true)) {
-                                    RuPayFintechLogo()
-                                } else {
-                                    Text(
-                                        text = brand.uppercase(),
-                                        color = Color.White,
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.Black,
-                                        fontStyle = FontStyle.Italic,
-                                        letterSpacing = 1.sp
-                                    )
-                                }
-
-                                val themeName = activeWallet.cardTheme.ifBlank { activeWallet.designId }
-                                if (themeName.isNotBlank() && !themeName.equals("midnight", ignoreCase = true)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = Color.Black.copy(alpha = 0.35f),
-                                        border = BorderStroke(0.8.dp, cardAccent.copy(alpha = 0.6f))
-                                    ) {
-                                        Text(
-                                            text = themeName.uppercase().take(8),
-                                            color = cardAccent,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Contactless / Google Pay indicator
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                if (isCardFrozen) {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = Color(0xFF0284C7).copy(alpha = 0.25f),
-                                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.AcUnit,
-                                                contentDescription = "Frozen",
-                                                tint = Color(0xFF7DD3FC),
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "FROZEN",
-                                                color = Color(0xFFE0F2FE),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp
-                                            )
-                                        }
-                                    }
-                                }
-
-                                ContactlessWavesIcon(tint = Color.White.copy(alpha = 0.85f))
-                            }
-                        }
-
-                        // Middle: EMV Gold Chip & Card Number
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // EMV Smart Chip
-                            EmvGoldChip()
-
-                            // Formatted Card Number
-                            val cleanNumber = activeWallet.cardNumber.filter { it.isDigit() }
-                            val lastFour = if (cleanNumber.length >= 4) cleanNumber.takeLast(4) else "4242"
-                            val displayedNumber = if (showFullNumbers && cleanNumber.length >= 12) {
-                                "${cleanNumber.take(4)}   ${cleanNumber.drop(4).take(4)}   ${cleanNumber.drop(8).take(4)}   $lastFour"
-                            } else {
-                                "••••   ••••   ••••   $lastFour"
-                            }
-
+                        Column {
                             Text(
-                                text = displayedNumber,
+                                text = activeWallet.cardName.ifBlank { activeWallet.bankName }.ifBlank { "FAMPAY" },
                                 color = Color.White,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace,
-                                letterSpacing = 1.2.sp
+                                letterSpacing = 0.5.sp
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "Tap card to inspect front & back",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
                             )
                         }
 
-                        // Bottom Row: Cardholder Name & Expiry Date
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            Column {
-                                Text(
-                                    text = "CARDHOLDER",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 0.8.sp
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = activeWallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.4.sp
-                                )
-                            }
+                        val creditSum = calculateCreditCardSummary(activeWallet)
+                        val displayBal = if (activeWallet.cardType.equals("credit", ignoreCase = true)) {
+                            creditSum?.availableCredit ?: 0.0
+                        } else activeWallet.balance
 
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "EXPIRES",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 0.8.sp
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = activeWallet.expiryDate.ifBlank { "12/28" },
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.4.sp
-                                )
-                            }
-                        }
+                        Text(
+                            text = "$currencySymbol${String.format("%,.2f", displayBal)}",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 17.sp
+                        )
                     }
                 }
             }
         }
 
-        // Card Indicator Dots (if multiple cards)
+        // Indicator Dots for Multiple Cards
         if (wallets.size > 1) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -588,13 +465,11 @@ fun FintechDigitalCard(
             }
         }
 
-        // ── Card Actions Row ──
-        // [Card Details]  [Freeze Card]  [More]
+        // Card Action Buttons Row: [Card Details] [Freeze Card] [More]
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 1. Card Details Action
             Surface(
                 onClick = {
                     if (activeWallet != null) {
@@ -632,7 +507,6 @@ fun FintechDigitalCard(
                 }
             }
 
-            // 2. Freeze Card Action
             Surface(
                 onClick = {
                     isCardFrozen = !isCardFrozen
@@ -668,7 +542,6 @@ fun FintechDigitalCard(
                 }
             }
 
-            // 3. More Action
             Surface(
                 onClick = {
                     if (activeWallet != null) {
@@ -707,11 +580,344 @@ fun FintechDigitalCard(
             }
         }
     }
+
+    // Interactive Pop-Out & 3D Flip Overlay Dialog
+    if (isPoppedOutModalOpen && activeWallet != null) {
+        val rotationYAnim by animateFloatAsState(
+            targetValue = if (isFlippedBack) 180f else 0f,
+            animationSpec = tween(durationMillis = 500),
+            label = "card_flip_3d_rotation"
+        )
+
+        Dialog(onDismissRequest = { isPoppedOutModalOpen = false }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { isPoppedOutModalOpen = false },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier
+                        .clickable(enabled = false) {}
+                        .padding(16.dp)
+                ) {
+                    // Card Container with 3D Flip Rotation
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(218.dp)
+                            .graphicsLayer {
+                                rotationY = rotationYAnim
+                                cameraDistance = 12f * density
+                            }
+                            .clickable { isFlippedBack = !isFlippedBack }
+                    ) {
+                        if (rotationYAnim <= 90f) {
+                            SinglePaymentCardView(
+                                wallet = activeWallet,
+                                currencySymbol = currencySymbol,
+                                isFrozen = isCardFrozen,
+                                showFullNumbers = showFullNumbers,
+                                isBack = false
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { rotationY = 180f }
+                            ) {
+                                SinglePaymentCardView(
+                                    wallet = activeWallet,
+                                    currencySymbol = currencySymbol,
+                                    isFrozen = isCardFrozen,
+                                    showFullNumbers = showFullNumbers,
+                                    isBack = true
+                                )
+                            }
+                        }
+                    }
+
+                    // Flip & Dismiss Controls
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { isFlippedBack = !isFlippedBack },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA855F7))
+                        ) {
+                            Icon(Icons.Default.Flip, contentDescription = "Flip Card", tint = Color.White)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isFlippedBack) "Show Front" else "Flip to Back", color = Color.White)
+                        }
+
+                        Button(
+                            onClick = { isPoppedOutModalOpen = false },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF222736))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            Spacer(Modifier.width(6.dp))
+                            Text("In Sleeve", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
- * EMV Gold Smart Chip with detailed circuitry lines
+ * Reusable Payment Card Renderer (Front / Back):
+ * Uses `getCardGradient(wallet.designId, wallet.primaryColor, wallet.secondaryColor)` so all saved designs propagate instantly!
  */
+@Composable
+fun SinglePaymentCardView(
+    wallet: WalletEntity,
+    currencySymbol: String,
+    isFrozen: Boolean = false,
+    showFullNumbers: Boolean = false,
+    isBack: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val cardGradient = getCardGradient(wallet.designId, wallet.primaryColor, wallet.secondaryColor)
+    val cardAccent = parseColorSafe(wallet.accentColor, Color(0xFF38BDF8))
+    val isCredit = wallet.cardType.equals("credit", ignoreCase = true)
+    val isUpi = wallet.cardType.equals("upi", ignoreCase = true)
+    val isCash = wallet.cardType.equals("cash", ignoreCase = true)
+    val isDebit = wallet.cardType.equals("debit", ignoreCase = true)
+
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF161822)),
+        border = BorderStroke(1.dp, if (isFrozen) Color(0xFF38BDF8) else cardAccent.copy(alpha = 0.35f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(24.dp),
+                spotColor = Color.Black.copy(alpha = 0.50f)
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (isFrozen) Brush.linearGradient(listOf(Color(0xFF0F1E2E), Color(0xFF09131C))) else cardGradient)
+                .padding(if (isBack) 0.dp else 22.dp)
+        ) {
+            if (isBack) {
+                // ── REVERSE SIDE (BACK OF CARD) ──
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Spacer(Modifier.height(18.dp))
+                    // Dark Magnetic Stripe
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                            .background(Color(0xFF090A0F))
+                    )
+
+                    // Signature Strip with Masked Identifier
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 22.dp)
+                    ) {
+                        Text(
+                            text = "AUTHORIZED SIGNATURE",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(34.dp)
+                                .background(Color(0xFFF1F5F9), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = wallet.cardHolderName.ifBlank { "VIVEK BHARDWAJ" }.uppercase(),
+                                color = Color(0xFF334155),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Cursive,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "•••• ${wallet.cardNumber.filter(Char::isDigit).takeLast(4).ifEmpty { "4242" }}",
+                                color = Color(0xFF0F172A),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Safe Account Information Notice
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 22.dp, end = 22.dp, bottom = 18.dp)
+                    ) {
+                        Text(
+                            text = "${wallet.bankName.ifBlank { "EXPENSETRACK" }} • ${wallet.cardType.uppercase()}",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Not valid without authorized signature. Customer Support: 1-800-555-0199",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 8.5.sp
+                        )
+                    }
+                }
+            } else {
+                // ── FRONT SIDE ──
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Top Row: Brand & Payment Type Badge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val brand = wallet.cardBrand.ifBlank { "Visa" }
+                            if (brand.contains("master", ignoreCase = true)) {
+                                MastercardFintechLogo()
+                            } else if (brand.contains("rupay", ignoreCase = true)) {
+                                RuPayFintechLogo()
+                            } else {
+                                Text(
+                                    text = brand.uppercase(),
+                                    color = Color.White,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontStyle = FontStyle.Italic,
+                                    letterSpacing = 1.sp
+                                )
+                            }
+
+                            // Payment Type Distinct Badge
+                            val badgeLabel = when {
+                                isUpi -> "UPI"
+                                isCash -> "CASH"
+                                isCredit -> "CREDIT"
+                                isDebit -> "DEBIT"
+                                else -> "SAVINGS"
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color.Black.copy(alpha = 0.40f),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.4f))
+                            ) {
+                                Text(
+                                    text = badgeLabel,
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        ContactlessWavesIcon(tint = Color.White.copy(alpha = 0.85f))
+                    }
+
+                    // Middle Row: EMV Chip & Number
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!isCash) {
+                            EmvGoldChip()
+                        } else {
+                            Text("CASH WALLET", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        val cleanNumber = wallet.cardNumber.filter { it.isDigit() }
+                        val lastFour = if (cleanNumber.length >= 4) cleanNumber.takeLast(4) else "4242"
+                        val displayedNumber = if (showFullNumbers && cleanNumber.length >= 12) {
+                            "${cleanNumber.take(4)}   ${cleanNumber.drop(4).take(4)}   ${cleanNumber.drop(8).take(4)}   $lastFour"
+                        } else {
+                            "••••   ••••   ••••   $lastFour"
+                        }
+
+                        Text(
+                            text = if (isUpi && wallet.cardNumber.contains("@")) wallet.cardNumber else displayedNumber,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.2.sp
+                        )
+                    }
+
+                    // Bottom Row: Cardholder Name & Expiry Date / Balance
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column {
+                            Text(
+                                text = "ACCOUNT",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                text = wallet.bankName.ifBlank { wallet.cardHolderName.ifBlank { "ACCOUNT" } }.uppercase(),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.4.sp
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = if (isCredit) "AVAILABLE" else "BALANCE",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.8.sp
+                            )
+                            val creditSum = if (isCredit) calculateCreditCardSummary(wallet) else null
+                            val balVal = if (isCredit) (creditSum?.availableCredit ?: 0.0) else wallet.balance
+                            Text(
+                                text = "$currencySymbol${String.format("%,.2f", balVal)}",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun EmvGoldChip(modifier: Modifier = Modifier) {
     Box(
@@ -731,20 +937,15 @@ fun EmvGoldChip(modifier: Modifier = Modifier) {
             val stroke = Stroke(width = 0.9.dp.toPx())
             val lineCol = Color(0xFF8A6506)
 
-            // Center circuit lines
             drawLine(lineCol, Offset(w * 0.35f, 0f), Offset(w * 0.35f, h), stroke.width)
             drawLine(lineCol, Offset(w * 0.65f, 0f), Offset(w * 0.65f, h), stroke.width)
             drawLine(lineCol, Offset(0f, h * 0.50f), Offset(w, h * 0.50f), stroke.width)
 
-            // Center contact oval
             drawCircle(lineCol, radius = w * 0.12f, center = Offset(w / 2f, h / 2f), style = stroke)
         }
     }
 }
 
-/**
- * Contactless Radio Waves Graphic (4 radiating curves)
- */
 @Composable
 fun ContactlessWavesIcon(
     tint: Color,
@@ -755,7 +956,6 @@ fun ContactlessWavesIcon(
         val h = size.height
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
 
-        // Arc 1 (inner)
         drawArc(
             color = tint,
             startAngle = -45f,
@@ -766,7 +966,6 @@ fun ContactlessWavesIcon(
             style = stroke
         )
 
-        // Arc 2 (outer)
         drawArc(
             color = tint,
             startAngle = -45f,
@@ -779,9 +978,6 @@ fun ContactlessWavesIcon(
     }
 }
 
-/**
- * Mastercard Interlocking Circles
- */
 @Composable
 fun MastercardFintechLogo(modifier: Modifier = Modifier) {
     Box(
@@ -804,9 +1000,6 @@ fun MastercardFintechLogo(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * RuPay Badge Logo
- */
 @Composable
 fun RuPayFintechLogo(modifier: Modifier = Modifier) {
     Row(

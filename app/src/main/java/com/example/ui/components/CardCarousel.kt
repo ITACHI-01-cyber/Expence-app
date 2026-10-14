@@ -85,31 +85,7 @@ import java.text.NumberFormat
 import java.util.Locale
 
 fun getCardGradient(designId: String, primaryColor: String, secondaryColor: String): Brush {
-    return when (designId.lowercase()) {
-        "lavender", "lilac", "onebank" -> Brush.linearGradient(
-            listOf(Color(0xFFC5B4F5), Color(0xFFA592EB), Color(0xFF8E7CE3))
-        )
-        "midnight", "midnight-aurora", "black", "matte-black" -> Brush.linearGradient(
-            listOf(Color(0xFF26262B), Color(0xFF131316))
-        )
-        "translucent", "glass", "silver", "silver-glass" -> Brush.linearGradient(
-            listOf(Color(0xFFE6E8F2), Color(0xFFD6DAE8))
-        )
-        "sunset" -> Brush.linearGradient(listOf(CardSunsetStart, CardSunsetEnd))
-        "aurora" -> Brush.linearGradient(listOf(CardAuroraStart, CardAuroraEnd))
-        "berry" -> Brush.linearGradient(listOf(CardBerryStart, CardBerryEnd))
-        "ocean-gradient", "ocean" -> Brush.linearGradient(listOf(CardOceanStart, CardOceanEnd))
-        "mint", "upi-mint" -> Brush.linearGradient(listOf(CardMintStart, CardMintEnd))
-        else -> {
-            try {
-                val c1 = Color(android.graphics.Color.parseColor(primaryColor))
-                val c2 = Color(android.graphics.Color.parseColor(secondaryColor))
-                Brush.linearGradient(listOf(c1, c2))
-            } catch (e: Exception) {
-                Brush.linearGradient(listOf(Color(0xFFC5B4F5), Color(0xFF8E7CE3)))
-            }
-        }
-    }
+    return com.example.ui.theme.getCardGradient(designId, primaryColor, secondaryColor)
 }
 
 fun formatCurrency(amount: Double, symbol: String = "$"): String {
