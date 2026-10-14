@@ -1,10 +1,17 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,19 +24,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Paid
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -39,11 +45,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,18 +59,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.R
 import com.example.model.ApiTestCaseResult
 import com.example.model.UserSettingsEntity
+import com.example.ui.components.EditProfileDialog
+import com.example.ui.components.ProfilePhotoHelper
+import com.example.ui.theme.AllCoordinatedPalettes
+import com.example.ui.theme.AppTheme
 import com.example.ui.theme.DangerRed
+import java.io.File
 
 @Composable
 fun SettingsScreen(
     userSettings: UserSettingsEntity?,
     onUpdateSettings: (name: String, email: String, currency: String, theme: String, accentColor: String) -> Unit,
+    onUpdateWallpaperSettings: (wallpaperUri: String, darkness: Float) -> Unit = { _, _ -> },
     onResetDemoData: () -> Unit,
     onClearLocalData: () -> Unit = {},
     onSyncServer: () -> Unit = {},
@@ -73,34 +91,47 @@ fun SettingsScreen(
     onRunApiTests: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val current = userSettings ?: UserSettingsEntity()
 
     var showProfileDialog by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf(current.name) }
-    var editEmail by remember { mutableStateOf(current.email) }
+
+    // Pending appearance states for explicit Save / Apply actions
+    var pendingAccentColor by remember(current.accentColor) { mutableStateOf(current.accentColor) }
+    var pendingWallpaperUri by remember(current.wallpaperUri) { mutableStateOf(current.wallpaperUri) }
+    var pendingDarkness by remember(current.wallpaperDarkness) { mutableFloatStateOf(current.wallpaperDarkness) }
+
+    val wallpaperPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val savedPath = ProfilePhotoHelper.saveProfilePhotoToInternalStorage(context, uri)
+                pendingWallpaperUri = savedPath
+                Toast.makeText(context, "Wallpaper selected! Tap Apply Wallpaper to save.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "Failed to set wallpaper", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     val currencies = listOf(
-        "₹" to "INR (₹)",
-        "$" to "USD ($)",
-        "€" to "EUR (€)",
-        "£" to "GBP (£)",
-        "¥" to "JPY (¥)"
-    )
-
-    val accents = listOf(
-        "purple" to Color(0xFF7C3AED),
-        "blue" to Color(0xFF2563EB),
-        "green" to Color(0xFF059669),
-        "rose" to Color(0xFFE11D48)
+        "₹" to "Rupee (INR)",
+        "$" to "Dollar (USD)",
+        "€" to "Euro (EUR)",
+        "£" to "Pound (GBP)",
+        "¥" to "Yen (JPY)"
     )
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("settings_screen_container"),
+        contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
             top = 12.dp,
-            bottom = 20.dp
+            bottom = 90.dp
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -118,19 +149,32 @@ fun SettingsScreen(
                         .padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val photoFile = remember(current.profilePictureUri) {
+                        if (current.profilePictureUri.isNotBlank()) File(current.profilePictureUri) else null
+                    }
                     Box(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .clickable { showProfileDialog = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = current.name.take(1).uppercase(),
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        if (photoFile != null && photoFile.exists()) {
+                            AsyncImage(
+                                model = photoFile,
+                                contentDescription = "Profile Picture",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(54.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = current.name.take(1).uppercase().ifEmpty { "U" },
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(14.dp))
@@ -167,11 +211,7 @@ fun SettingsScreen(
                     }
 
                     OutlinedButton(
-                        onClick = {
-                            editName = current.name
-                            editEmail = current.email
-                            showProfileDialog = true
-                        },
+                        onClick = { showProfileDialog = true },
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(text = "Edit", fontSize = 12.sp)
@@ -215,7 +255,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        currencies.forEach { (symbol, label) ->
+                        currencies.forEach { (symbol, _) ->
                             val isSel = current.currency == symbol
                             Surface(
                                 onClick = {
@@ -242,7 +282,7 @@ fun SettingsScreen(
             }
         }
 
-        // Theme Setting (System / Light / Dark)
+        // Theme Setting (Dark / Light / System)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -300,7 +340,7 @@ fun SettingsScreen(
             }
         }
 
-        // Accent Color Palette
+        // 16 Coordinated Accent Palettes Grid with Save Palette Button
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -311,47 +351,276 @@ fun SettingsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Accent Palette",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "16 Beautiful Palettes",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // 16 Palettes in 4 Columns Grid
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AllCoordinatedPalettes.chunked(4).forEach { rowPalettes ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                rowPalettes.forEach { palette ->
+                                    val isPending = pendingAccentColor.equals(palette.letter, ignoreCase = true)
+                                    val isSaved = current.accentColor.equals(palette.letter, ignoreCase = true)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(58.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(
+                                                width = if (isPending) 2.5.dp else 1.dp,
+                                                color = if (isPending) Color(0xFFA855F7) else AppTheme.colors.surfaceBorder,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable {
+                                                pendingAccentColor = palette.letter
+                                            }
+                                            .padding(3.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                            verticalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(28.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                            ) {
+                                                palette.colors.forEach { c ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxSize()
+                                                            .background(c)
+                                                    )
+                                                }
+                                            }
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = palette.letter,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (isPending || isSaved) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = Color(0xFFA855F7),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val hasPaletteChanges = !pendingAccentColor.equals(current.accentColor, ignoreCase = true)
+
+                    Button(
+                        onClick = {
+                            onUpdateSettings(current.name, current.email, current.currency, current.theme, pendingAccentColor)
+                            Toast.makeText(context, "Accent Palette Saved Successfully!", Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = hasPaletteChanges,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (hasPaletteChanges) "Save Palette" else "Palette Saved",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Background Wallpaper Customization with Apply Wallpaper Button
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Accent Color",
+                            text = "Background Wallpaper",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    // Preview Box
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(1.dp, AppTheme.colors.surfaceBorder, RoundedCornerShape(14.dp))
+                    ) {
+                        val wallpaperFile = remember(pendingWallpaperUri) {
+                            if (pendingWallpaperUri.isNotBlank()) File(pendingWallpaperUri) else null
+                        }
+
+                        if (wallpaperFile != null && wallpaperFile.exists()) {
+                            AsyncImage(
+                                model = wallpaperFile,
+                                contentDescription = "Wallpaper Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            AsyncImage(
+                                model = R.drawable.auth_forest_bg,
+                                contentDescription = "Default Scenic Wallpaper",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = pendingDarkness))
+                        )
+
+                        Text(
+                            text = if (wallpaperFile != null) "Custom Wallpaper (Pending)" else "Default Wallpaper Preview",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(10.dp)
+                        )
+                    }
+
+                    // Dark Overlay Slider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Dark Overlay", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${(pendingDarkness * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+
+                    Slider(
+                        value = pendingDarkness,
+                        onValueChange = { pendingDarkness = it },
+                        valueRange = 0f..0.85f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+
+                    val hasWallpaperChanges = (pendingWallpaperUri != current.wallpaperUri) || (pendingDarkness != current.wallpaperDarkness)
+
+                    Button(
+                        onClick = {
+                            onUpdateWallpaperSettings(pendingWallpaperUri, pendingDarkness)
+                            Toast.makeText(context, "Wallpaper Applied Successfully!", Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = hasWallpaperChanges,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (hasWallpaperChanges) "Apply Wallpaper" else "Wallpaper Applied",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        accents.forEach { (name, color) ->
-                            val isSel = current.accentColor == name
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .clickable {
-                                        onUpdateSettings(current.name, current.email, current.currency, current.theme, name)
-                                    }
-                                    .padding(if (isSel) 4.dp else 0.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSel) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .clip(CircleShape)
-                                            .background(Color.White)
-                                    )
-                                }
-                            }
+                        Button(
+                            onClick = { wallpaperPickerLauncher.launch("image/*") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Change Image", fontSize = 11.5.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                pendingDarkness = 0.40f
+                                pendingWallpaperUri = ""
+                                onUpdateWallpaperSettings("", 0.40f)
+                                Toast.makeText(context, "Reset to Default Wallpaper", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Reset", fontSize = 11.5.sp)
                         }
                     }
                 }
@@ -377,89 +646,15 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (serverConnected) Color(0xFF22C55E) else Color(0xFFEF4444))
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Connected Backend",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "https://expencetrack.onrender.com",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(100),
-                            color = (if (serverConnected) Color(0xFF22C55E) else Color(0xFFEF4444)).copy(alpha = 0.15f)
-                        ) {
-                            Text(
-                                text = if (serverConnected) "CONNECTED" else "NOT SYNCED",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (serverConnected) Color(0xFF15803D) else Color(0xFFB91C1C),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "Frontend: https://expence-track-nu.vercel.app\nSyncs authentication and requests directly with your Render server.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onSyncServer,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("sync_server_btn")
-                    ) {
-                        Text(text = "Sync Transactions with Server", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-
-        // Read-only checks against production website endpoints.
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth().testTag("api_diagnostics_card"),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.CloudDone,
+                                imageVector = if (serverConnected) Icons.Default.CloudDone else Icons.Default.Error,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = if (serverConnected) MaterialTheme.colorScheme.primary else DangerRed,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Backend API Reachability",
+                                text = "Backend Server Status",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -467,134 +662,106 @@ fun SettingsScreen(
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF10B981).copy(alpha = 0.12f)
+                            shape = RoundedCornerShape(50),
+                            color = if (serverConnected) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
                         ) {
                             Text(
-                                text = "Read-only checks",
+                                text = if (serverConnected) "ONLINE" else "DISCONNECTED",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF059669),
+                                color = if (serverConnected) Color(0xFF047857) else DangerRed,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Text(
-                        text = "Checks only the existing website's GET endpoints. The backend remains the source of truth; Room is an optional local cache.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.sp
+                        text = "https://expencetrack.onrender.com",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Button(
-                        onClick = onRunApiTests,
-                        enabled = !isRunningApiTests,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("run_crud_tests_btn"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (isRunningApiTests) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Checking backend...", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
+                        OutlinedButton(
+                            onClick = onSyncServer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Check backend endpoints", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Sync Now", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = onRunApiTests,
+                            enabled = !isRunningApiTests,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isRunningApiTests) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                            } else {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text("Test API Endpoints", fontSize = 12.sp)
                         }
                     }
 
                     if (apiTestResults.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = AppTheme.colors.surfaceBorder)
+                        Spacer(modifier = Modifier.height(12.dp))
+
                         Text(
                             text = "Live Test Results (${apiTestResults.count { it.isSuccess }}/${apiTestResults.size} Passed):",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            apiTestResults.forEach { test ->
-                                val methodColor = when (test.method) {
-                                    "GET" -> Color(0xFF2563EB)
-                                    "POST" -> Color(0xFF059669)
-                                    "PUT" -> Color(0xFFD97706)
-                                    "DELETE" -> Color(0xFFDC2626)
-                                    else -> Color(0xFF7C3AED)
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.fillMaxWidth()
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            apiTestResults.forEach { result ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = methodColor.copy(alpha = 0.15f)
-                                                ) {
-                                                    Text(
-                                                        text = test.method,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        color = methodColor,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = test.testName,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "${test.latencyMs}ms",
-                                                    fontSize = 10.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Icon(
-                                                    imageVector = if (test.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
-                                                    contentDescription = null,
-                                                    tint = if (test.isSuccess) Color(0xFF10B981) else DangerRed,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (result.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                                            contentDescription = null,
+                                            tint = if (result.isSuccess) Color(0xFF10B981) else DangerRed,
+                                            modifier = Modifier.size(14.dp)
+                                        )
                                         Text(
-                                            text = test.detailMessage,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            lineHeight = 15.sp
+                                            text = "${result.method} ${result.testName}",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
+
+                                    Text(
+                                        text = "${result.statusCode} (${result.latencyMs}ms)",
+                                        fontSize = 10.5.sp,
+                                        color = if (result.isSuccess) Color(0xFF10B981) else DangerRed,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -603,7 +770,7 @@ fun SettingsScreen(
             }
         }
 
-        // Account Actions: Log Out / Switch Account (Clean New Button as Requested)
+        // Account Session: Logout / Switch Account
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -616,25 +783,16 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .padding(18.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Account Session",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    Text(
+                        text = "Account Session",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Logged in as ${current.name} (${current.email}). Switch account or sign in with another profile.",
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
@@ -643,96 +801,53 @@ fun SettingsScreen(
                     Button(
                         onClick = onLogout,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+                            containerColor = DangerRed,
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("logout_btn")
+                        modifier = Modifier.fillMaxWidth()
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(text = "Log Out / Switch Account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
         }
 
-        // App Information
+        // Footer App Metadata
         item {
-            Card(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.app_logo),
-                        contentDescription = "Expence Rack Logo",
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(14.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Expence Rack Android v1.0.0",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Faithful replica of Expence Rack Web by ITACHI-01-cyber",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "ExpenseTrack Android v1.0",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Faithful replica of Expence Rack Web by ITACHI-01-cyber",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 
     // Edit Profile Dialog
     if (showProfileDialog) {
-        AlertDialog(
+        EditProfileDialog(
+            userSettings = current,
             onDismissRequest = { showProfileDialog = false },
-            title = { Text("Edit Profile") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Your Name") },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = editEmail,
-                        onValueChange = {},
-                        label = { Text("Email Address") },
-                        singleLine = true,
-                        readOnly = true,
-                        supportingText = { Text("Email changes are not supported by the website API.") }
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onUpdateSettings(editName, editEmail, current.currency, current.theme, current.accentColor)
-                        showProfileDialog = false
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showProfileDialog = false }) {
-                    Text("Cancel")
-                }
+            onSaveProfile = { name, email, _ ->
+                onUpdateSettings(name, email, current.currency, current.theme, current.accentColor)
             }
         )
     }
