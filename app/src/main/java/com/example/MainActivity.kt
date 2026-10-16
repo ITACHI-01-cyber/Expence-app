@@ -30,6 +30,7 @@ import com.example.model.WalletEntity
 import com.example.ui.components.AddEditGoalDialog
 import com.example.ui.components.AddEditTransactionDialog
 import com.example.ui.components.AddEditWalletDialog
+import com.example.ui.components.AppWallpaperBackground
 import com.example.ui.components.BottomNavBar
 import com.example.ui.components.EditBudgetDialog
 import com.example.ui.components.EditProfileDialog
@@ -43,7 +44,12 @@ import com.example.ui.screens.TransactionsScreen
 import com.example.ui.screens.WalletScreen
 import com.example.ui.theme.ExpenceTrackTheme
 import com.example.viewmodel.ExpenseViewModel
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.viewmodel.ScreenTab
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,27 +135,34 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
         if (!isAuthenticated) {
             AuthScreen(viewModel = viewModel)
         } else {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-                topBar = {
-                    TopBar(
-                        userSettings = userSettings,
-                        isSyncing = isSyncing,
-                        onSyncClick = { viewModel.syncAllData() },
-                        onAddTransactionClick = { showAddTransactionDialog = true },
-                        onProfileClick = { showEditProfileDialog = true }
-                    )
-                },
-                bottomBar = {
-                    BottomNavBar(
-                        currentTab = currentTab,
-                        onTabSelected = { viewModel.setTab(it) }
-                    )
-                },
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                modifier = Modifier.fillMaxSize()
-            ) { innerPadding ->
+            val wallpaperUri = userSettings?.wallpaperUri.orEmpty()
+            val darkness = userSettings?.wallpaperDarkness ?: 0.40f
+
+            AppWallpaperBackground(
+                wallpaperUri = wallpaperUri,
+                darkness = darkness
+            ) {
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    topBar = {
+                        TopBar(
+                            userSettings = userSettings,
+                            isSyncing = isSyncing,
+                            onSyncClick = { viewModel.syncAllData() },
+                            onAddTransactionClick = { showAddTransactionDialog = true },
+                            onProfileClick = { showEditProfileDialog = true }
+                        )
+                    },
+                    bottomBar = {
+                        BottomNavBar(
+                            currentTab = currentTab,
+                            onTabSelected = { viewModel.setTab(it) }
+                        )
+                    },
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    modifier = Modifier.fillMaxSize()
+                ) { innerPadding ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -239,6 +252,9 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                                 userSettings = userSettings,
                                 onUpdateSettings = { name, email, currency, theme, accent ->
                                     viewModel.updateUserSettings(name, email, currency, theme, accent)
+                                },
+                                onUpdateWallpaperSettings = { uri, darkness ->
+                                    viewModel.updateWallpaperSettings(uri, darkness)
                                 },
                                 onResetDemoData = { viewModel.resetDemoData() },
                                 onClearLocalData = { viewModel.clearAllLocalData() },
@@ -406,5 +422,6 @@ fun ExpenceTrackApp(viewModel: ExpenseViewModel = viewModel()) {
                 }
             )
         }
+      }
     }
 }

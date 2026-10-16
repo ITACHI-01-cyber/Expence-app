@@ -773,18 +773,23 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         artwork: String,
         cardStyle: String
     ) {
-        runRepositoryOperation {
-            wallets.value.find { it.id == walletId }?.let { wallet ->
-                val updated = wallet.copy(
-                    cardTheme = theme,
-                    designId = theme,
-                    primaryColor = primaryColor,
-                    secondaryColor = secondaryColor,
-                    accentColor = accentColor,
-                    artwork = artwork,
-                    cardStyle = cardStyle
-                )
-                repository.updateWallet(updated)
+        viewModelScope.launch {
+            val syncResult = repository.updateCardCustomization(
+                walletId = walletId,
+                theme = theme,
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
+                accentColor = accentColor,
+                artwork = artwork,
+                cardStyle = cardStyle
+            )
+            if (syncResult.isSuccess) {
+                _operationSuccessMessage.value = "Card design saved and synchronized with server."
+                _operationErrorMessage.value = null
+            } else {
+                val detail = syncResult.exceptionOrNull()?.localizedMessage
+                _operationSuccessMessage.value = "Card design saved locally" + if (!detail.isNullOrBlank()) " ($detail)" else "."
+                _operationErrorMessage.value = null
             }
         }
     }

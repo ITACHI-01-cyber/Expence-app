@@ -18,6 +18,7 @@ import com.example.network.CreditStatement
 import com.example.network.CreditStatementRequest
 import com.example.network.ChangeUsernameByOtpRequest
 import com.example.network.ChangeUsernameByPasswordRequest
+import com.example.network.CardCustomizationRequest
 import com.example.network.ForgotPasswordRequest
 import com.example.network.ForgotUsernameRequest
 import com.example.network.LoginData
@@ -122,6 +123,23 @@ class BackendCrudTest {
 
         override suspend fun updateWallet(id: String, wallet: ServerWallet) =
             Response.success(ApiResponse(success = true, data = wallet.copy(id = id)))
+
+        override suspend fun updateWalletCustomization(id: String, customization: CardCustomizationRequest) =
+            Response.success(
+                ApiResponse(
+                    success = true,
+                    data = ServerWallet(
+                        id = id,
+                        designPreset = customization.designPreset,
+                        primaryColor = customization.primaryColor,
+                        secondaryColor = customization.secondaryColor,
+                        textColor = customization.textColor,
+                        accentColor = customization.accentColor,
+                        artwork = customization.artwork,
+                        cardStyle = customization.cardStyle
+                    )
+                )
+            )
 
         override suspend fun addMoneyToWallet(id: String, amount: Double) =
             Response.success(
@@ -461,6 +479,66 @@ class BackendCrudTest {
         assertEquals(null, db.appDao().getCardDisplayBalance(secondWallet.id))
         assertEquals(900.0, db.appDao().getWalletById(firstWallet.id)!!.balance, 0.001)
         assertEquals(5000.0, db.appDao().getWalletById(secondWallet.id)!!.balance, 0.001)
+    }
+
+    @Test
+    fun `customization PATCH persists all supported fields without changing finances`() = runBlocking {
+        val wallet = WalletEntity(
+            id = "wallet-design",
+            bankName = "Design Bank",
+            cardType = "credit",
+            cardNumber = "1111222233334444",
+            balance = 900.0,
+            creditLimit = 5000.0,
+            outstandingBalance = 1250.0
+        )
+        db.appDao().insertWallet(wallet)
+
+        val result = repository.updateCardCustomization(
+            walletId = wallet.id,
+            theme = "aurora",
+            primaryColor = "#112233",
+            secondaryColor = "#445566",
+            accentColor = "#778899",
+            artwork = "waves",
+            cardStyle = "glass"
+        )
+
+        assertTrue(result.isSuccess)
+        val saved = db.appDao().getWalletById(wallet.id)!!
+        assertEquals("aurora", saved.designId)
+        assertEquals("#112233", saved.primaryColor)
+        assertEquals("#445566", saved.secondaryColor)
+        assertEquals("#778899", saved.accentColor)
+        assertEquals("waves", saved.artwork)
+        assertEquals("glass", saved.cardStyle)
+        assertEquals(900.0, saved.balance, 0.001)
+        assertEquals(5000.0, saved.creditLimit!!, 0.001)
+        assertEquals(1250.0, saved.outstandingBalance!!, 0.001)
+    }
+
+    @Test
+    fun `failed customization PATCH leaves the saved design unchanged`() = runBlocking {
+        val wallet = WalletEntity(
+            id = "wallet-failed-design",
+            bankName = "Design Bank",
+            cardType = "debit",
+            cardNumber = "1111",
+            designId = "midnight",
+            cardTheme = "midnight"
+        )
+        db.appDao().insertWallet(wallet)
+        val failingApi = object : BackendApiService by mockApiService {
+            override suspend fun updateWalletCustomization(id: String, customization: CardCustomizationRequest) =
+                Response.success(ApiResponse<ServerWallet>(success = false, message = "Rejected"))
+        }
+
+        val result = ExpenseRepository(db.appDao(), failingApi).updateCardCustomization(
+            wallet.id, "aurora", "#112233", "#445566", "#778899", "waves", "glass"
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals("midnight", db.appDao().getWalletById(wallet.id)!!.designId)
     }
 
     @Test

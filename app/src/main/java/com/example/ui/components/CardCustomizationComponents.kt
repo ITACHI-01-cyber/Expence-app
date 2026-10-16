@@ -340,6 +340,10 @@ val CARD_STYLES = listOf(
 )
 
 val ARTWORK_OPTIONS = listOf(
+    "ai_pop_art" to "Pop Art",
+    "ai_aqua_life" to "Aqua Life",
+    "ai_koi_ink" to "Koi Ink",
+    "ai_mist_forest" to "Mist Forest",
     "mascot_broco" to "Broco Pop",
     "space_tonot" to "Space Astronaut",
     "toast_bredo" to "Bredo Toast",
@@ -389,6 +393,7 @@ fun CustomizablePaymentCardView(
     currencySymbol: String = "₹",
     displayBalance: Double = wallet.balance,
     isFrozen: Boolean = false,
+    showCardholderAndExpiry: Boolean = true,
     overrideTheme: String? = null,
     overridePrimaryColor: String? = null,
     overrideSecondaryColor: String? = null,
@@ -410,6 +415,7 @@ fun CustomizablePaymentCardView(
     val primaryColor = parseColorSafe(primaryHex, Color(0xFF14B8A6))
     val secondaryColor = parseColorSafe(secondaryHex, Color(0xFF042F2E))
     val accentColor = parseColorSafe(accentHex, Color(0xFFA3E635))
+    val textColor = parseColorSafe(wallet.textColor, Color.White)
 
     val animatedPrimary by animateColorAsState(targetValue = primaryColor, animationSpec = tween(300), label = "c_pri")
     val animatedSecondary by animateColorAsState(targetValue = secondaryColor, animationSpec = tween(300), label = "c_sec")
@@ -473,40 +479,7 @@ fun CustomizablePaymentCardView(
                     )
             )
 
-            // Premium Recessed Black Leather Sleeve Pocket at Bottom
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                val pocketPath = Path().apply {
-                    moveTo(0f, h * 0.50f)
-                    cubicTo(w * 0.28f, h * 0.38f, w * 0.72f, h * 0.38f, w, h * 0.50f)
-                    lineTo(w, h)
-                    lineTo(0f, h)
-                    close()
-                }
 
-                drawPath(
-                    path = pocketPath,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF222533), Color(0xFF14161F), Color(0xFF0A0C10)),
-                        startY = h * 0.38f,
-                        endY = h
-                    )
-                )
-
-                val stitchPath = Path().apply {
-                    moveTo(0f, h * 0.50f)
-                    cubicTo(w * 0.28f, h * 0.38f, w * 0.72f, h * 0.38f, w, h * 0.50f)
-                }
-                drawPath(
-                    path = stitchPath,
-                    color = Color.White.copy(alpha = 0.60f),
-                    style = Stroke(
-                        width = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-                    )
-                )
-            }
 
             // Front Card Content
             Column(
@@ -528,7 +501,7 @@ fun CustomizablePaymentCardView(
                         val brand = wallet.cardBrand.ifBlank { "Visa" }
                         Text(
                             text = brand.uppercase(),
-                            color = Color.White,
+                            color = textColor,
                             fontWeight = FontWeight.Black,
                             fontStyle = FontStyle.Italic,
                             fontSize = 19.sp,
@@ -559,14 +532,14 @@ fun CustomizablePaymentCardView(
                         Icon(
                             imageVector = Icons.Outlined.Wifi,
                             contentDescription = "Contactless",
-                            tint = Color.White.copy(alpha = 0.85f),
+                            tint = textColor.copy(alpha = 0.85f),
                             modifier = Modifier.size(18.dp)
                         )
 
                         // Google Pay indicator
                         Text(
                             text = "Google Pay",
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = textColor.copy(alpha = 0.9f),
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             letterSpacing = 0.3.sp
@@ -617,13 +590,13 @@ fun CustomizablePaymentCardView(
                         ) {
                             Text(
                                 text = if (isCreditCard) "Available: " else "Balance: ",
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = textColor.copy(alpha = 0.7f),
                                 fontSize = 11.sp
                             )
                             Text(
                                 text = balanceToDisplay?.let { formatCardBalance(it, currencySymbol) }
                                     ?: "Setup required",
-                                color = Color.White,
+                                color = textColor,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -637,50 +610,52 @@ fun CustomizablePaymentCardView(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = Color.White,
+                    color = textColor,
                     letterSpacing = 1.8.sp
                 )
 
                 // Bottom Row: Cardholder Name and Expiration
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Column {
-                        Text(
-                            text = "CARDHOLDER",
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.65f),
-                            letterSpacing = 0.8.sp
-                        )
-                        Text(
-                            text = wallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            letterSpacing = 0.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                if (showCardholderAndExpiry) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column {
+                            Text(
+                                text = "CARDHOLDER",
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor.copy(alpha = 0.65f),
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                text = wallet.cardHolderName.ifBlank { "CARDHOLDER" }.uppercase(),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "EXPIRES",
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.65f),
-                            letterSpacing = 0.8.sp
-                        )
-                        Text(
-                            text = wallet.expiryDate.ifBlank { "12/28" },
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "EXPIRES",
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor.copy(alpha = 0.65f),
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                text = wallet.expiryDate.ifBlank { "12/28" },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                 }
             }
@@ -735,6 +710,45 @@ fun DrawScope.drawCustomCardArtwork(
     val h = size.height
 
     when (artwork.lowercase()) {
+        "ai_pop_art" -> {
+            drawCircle(color = Color(0xFFFF007F).copy(alpha = 0.35f), radius = h * 0.4f, center = Offset(w * 0.8f, h * 0.5f))
+            drawCircle(color = Color(0xFFFFD700).copy(alpha = 0.4f), radius = h * 0.25f, center = Offset(w * 0.7f, h * 0.3f))
+            drawRect(color = Color(0xFF00E5FF).copy(alpha = 0.3f), topLeft = Offset(w * 0.5f, h * 0.2f), size = Size(w * 0.2f, h * 0.4f))
+            drawCircle(color = Color.White.copy(alpha = 0.8f), radius = 8f, center = Offset(w * 0.75f, h * 0.45f))
+        }
+        "ai_aqua_life" -> {
+            drawRect(
+                brush = Brush.horizontalGradient(listOf(Color(0xFF0083B0), Color(0xFF00B4DB))),
+                topLeft = Offset.Zero,
+                size = size
+            )
+            drawCircle(color = Color.White.copy(alpha = 0.15f), radius = h * 0.5f, center = Offset(w * 0.8f, h * 0.2f))
+            drawOval(color = Color(0xFFFF6B6B).copy(alpha = 0.4f), topLeft = Offset(w * 0.6f, h * 0.4f), size = Size(w * 0.25f, h * 0.2f))
+        }
+        "ai_koi_ink" -> {
+            drawRect(
+                brush = Brush.horizontalGradient(listOf(Color(0xFF1A1A1A), Color(0xFF333333))),
+                topLeft = Offset.Zero,
+                size = size
+            )
+            drawCircle(color = Color(0xFFE63946).copy(alpha = 0.5f), radius = h * 0.3f, center = Offset(w * 0.85f, h * 0.3f))
+            drawCircle(color = Color.White.copy(alpha = 0.2f), radius = h * 0.2f, center = Offset(w * 0.65f, h * 0.6f))
+        }
+        "ai_mist_forest" -> {
+            drawRect(
+                brush = Brush.verticalGradient(listOf(Color(0xFF2D6A4F), Color(0xFF1B4332))),
+                topLeft = Offset.Zero,
+                size = size
+            )
+            drawCircle(color = Color(0xFFE76F51), radius = h * 0.22f, center = Offset(w * 0.82f, h * 0.35f))
+            val mountainPath = Path().apply {
+                moveTo(w * 0.5f, h)
+                lineTo(w * 0.7f, h * 0.4f)
+                lineTo(w * 0.9f, h)
+                close()
+            }
+            drawPath(mountainPath, color = Color.White.copy(alpha = 0.2f))
+        }
         "mascot_broco" -> {
             // Playful circular curly shapes and bouncy geometric curves
             drawCircle(
@@ -1751,9 +1765,96 @@ private fun CustomizationControlsSection(
             }
 
             "artwork" -> {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "AI-Inspired Card Artwork",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textCrispWhite
+                        )
+                        Text(
+                            text = "Turn your favorite artwork into a unique payment card.",
+                            fontSize = 12.sp,
+                            color = colors.textMutedLavender
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            val aiArtworks = listOf(
+                                Triple("ai_pop_art", "Pop Art", "Colorful illustrations & bold patterns"),
+                                Triple("ai_aqua_life", "Aqua Life", "Koi fish & flowing water"),
+                                Triple("ai_koi_ink", "Koi Ink", "Japanese ink art"),
+                                Triple("ai_mist_forest", "Mist Forest", "Serene mountain landscape")
+                            )
+                            aiArtworks.forEach { (artKey, title, desc) ->
+                                val isSelected = selectedArtwork.equals(artKey, ignoreCase = true)
+                                Surface(
+                                    onClick = { onSelectArtwork(artKey) },
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (isSelected) colors.primaryAccent.copy(alpha = 0.22f) else colors.surface,
+                                    border = BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) colors.primaryAccent else colors.surfaceBorder
+                                    ),
+                                    modifier = Modifier.width(160.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(70.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(Color(0xFF1E222B))
+                                        ) {
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                drawCustomCardArtwork(artKey, colors.primaryAccent, colors.brandColor, colors.surface)
+                                            }
+                                        }
+                                        Text(
+                                            text = title,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.textCrispWhite
+                                        )
+                                        Text(
+                                            text = desc,
+                                            fontSize = 10.sp,
+                                            color = colors.textMutedLavender,
+                                            maxLines = 1
+                                        )
+                                        Surface(
+                                            onClick = { onSelectArtwork(artKey) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) colors.primaryAccent else colors.surfaceBorder,
+                                            modifier = Modifier.fillMaxWidth().height(30.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = if (isSelected) "Applied" else "Apply to Card",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) Color.Black else colors.textCrispWhite
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = colors.surfaceBorder, thickness = 1.dp)
+
                     Text(
-                        text = "Card Artwork Illustration",
+                        text = "Collectible Card Presets",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.textCrispWhite
@@ -1765,7 +1866,7 @@ private fun CustomizationControlsSection(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        ARTWORK_OPTIONS.forEach { (artKey, label) ->
+                        ARTWORK_OPTIONS.filterNot { it.first.startsWith("ai_") }.forEach { (artKey, label) ->
                             val isSelected = selectedArtwork.equals(artKey, ignoreCase = true)
 
                             Surface(

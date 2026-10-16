@@ -4,6 +4,20 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.util.UUID
 
+@Entity(tableName = "wallet_customizations")
+data class WalletCustomizationEntity(
+    @PrimaryKey val walletId: String,
+    val cardTheme: String = "midnight",
+    val primaryColor: String = "#1A1A2E",
+    val secondaryColor: String = "#16213E",
+    val accentColor: String = "#38BDF8",
+    val artwork: String = "waves",
+    val cardStyle: String = "illustrated",
+    val textColor: String = "#FFFFFF",
+    val cardIcon: String = "none",
+    val lastUpdated: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "wallets")
 data class WalletEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),

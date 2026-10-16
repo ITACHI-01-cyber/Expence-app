@@ -335,11 +335,10 @@ fun FintechDigitalCard(
                 }
             }
         } else {
-            // Card Sleeve Container
+            // Premium Leather Card Pocket Container with swipe support
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
                     .pointerInput(wallets.size) {
                         if (wallets.size > 1) {
                             var totalDrag = 0f
@@ -359,88 +358,15 @@ fun FintechDigitalCard(
                         }
                     }
             ) {
-                // Payment Card sitting inside Sleeve (Top ~60% exposed)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .align(Alignment.TopCenter)
-                        .clickable {
-                            isFlippedBack = false
-                            isPoppedOutModalOpen = true
-                        }
-                ) {
-                    CustomizablePaymentCardView(
-                        wallet = activeWallet,
-                        currencySymbol = currencySymbol,
-                        isFrozen = isCardFrozen
-                    )
-                }
-
-                // Dark Textured Leather Card Sleeve Front Panel
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(115.dp)
-                        .align(Alignment.BottomCenter)
-                        .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 16.dp, topEnd = 16.dp))
-                        .background(Color(0xFF161822))
-                        .border(
-                            1.dp,
-                            Color.White.copy(alpha = 0.15f),
-                            RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 16.dp, topEnd = 16.dp)
-                        )
-                        .clickable {
-                            isFlippedBack = false
-                            isPoppedOutModalOpen = true
-                        }
-                        .padding(horizontal = 20.dp, vertical = 14.dp)
-                ) {
-                    // Fine stitching line effect at top edge
-                    Canvas(modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.TopCenter)) {
-                        drawLine(
-                            color = Color.White.copy(alpha = 0.22f),
-                            start = Offset(0f, 2f),
-                            end = Offset(size.width, 2f),
-                            strokeWidth = 1.2.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
-                        )
+                LeatherCardPocket(
+                    wallet = activeWallet,
+                    currencySymbol = currencySymbol,
+                    isFrozen = isCardFrozen,
+                    onCardClick = {
+                        isFlippedBack = false
+                        isPoppedOutModalOpen = true
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = activeWallet.cardName.ifBlank { activeWallet.bankName }.ifBlank { "FAMPAY" },
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                letterSpacing = 0.5.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "Tap card to inspect front & back",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        val creditSum = calculateCreditCardSummary(activeWallet)
-                        val displayBal = if (activeWallet.cardType.equals("credit", ignoreCase = true)) {
-                            creditSum?.availableCredit ?: 0.0
-                        } else activeWallet.balance
-
-                        Text(
-                            text = "$currencySymbol${String.format("%,.2f", displayBal)}",
-                            color = Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 17.sp
-                        )
-                    }
-                }
+                )
             }
         }
 
@@ -683,6 +609,16 @@ fun SinglePaymentCardView(
     isBack: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    if (!isBack) {
+        CustomizablePaymentCardView(
+            wallet = wallet,
+            currencySymbol = currencySymbol,
+            isFrozen = isFrozen,
+            modifier = modifier
+        )
+        return
+    }
+
     val cardGradient = getCardGradient(wallet.designId, wallet.primaryColor, wallet.secondaryColor)
     val cardAccent = parseColorSafe(wallet.accentColor, Color(0xFF38BDF8))
     val isCredit = wallet.cardType.equals("credit", ignoreCase = true)

@@ -149,7 +149,7 @@ fun BudgetPlannerScreen(
     val accent = MaterialTheme.colorScheme.primary
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().background(colors.background),
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 90.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {

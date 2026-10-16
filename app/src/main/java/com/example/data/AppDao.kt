@@ -10,6 +10,7 @@ import com.example.model.CardDisplayBalanceEntity
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
+import com.example.model.WalletCustomizationEntity
 import com.example.model.WalletEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -58,6 +59,25 @@ interface AppDao {
 
     @Query("DELETE FROM wallets")
     suspend fun clearWallets()
+
+    // ── Wallet Customizations ──
+    @Query("SELECT * FROM wallet_customizations")
+    suspend fun getAllWalletCustomizationsList(): List<WalletCustomizationEntity>
+
+    @Query("SELECT * FROM wallet_customizations WHERE walletId = :walletId LIMIT 1")
+    suspend fun getWalletCustomization(walletId: String): WalletCustomizationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWalletCustomization(customization: WalletCustomizationEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWalletCustomizations(customizations: List<WalletCustomizationEntity>)
+
+    @Query("DELETE FROM wallet_customizations WHERE walletId = :walletId")
+    suspend fun deleteWalletCustomization(walletId: String)
+
+    @Query("DELETE FROM wallet_customizations")
+    suspend fun clearWalletCustomizations()
 
     // ── Transactions ──
     @Query("SELECT * FROM transactions ORDER BY timestamp DESC")
