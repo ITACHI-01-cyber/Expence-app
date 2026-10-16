@@ -11,18 +11,20 @@ import com.example.model.CardDisplayBalanceEntity
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
+import com.example.model.WalletCustomizationEntity
 import com.example.model.WalletEntity
 
 @Database(
     entities = [
         WalletEntity::class,
+        WalletCustomizationEntity::class,
         CardDisplayBalanceEntity::class,
         TransactionEntity::class,
         SavingsGoalEntity::class,
         BudgetConfigEntity::class,
         UserSettingsEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -77,6 +79,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS wallet_customizations (
+                        walletId TEXT NOT NULL PRIMARY KEY,
+                        cardTheme TEXT NOT NULL DEFAULT 'midnight',
+                        primaryColor TEXT NOT NULL DEFAULT '#1A1A2E',
+                        secondaryColor TEXT NOT NULL DEFAULT '#16213E',
+                        accentColor TEXT NOT NULL DEFAULT '#38BDF8',
+                        artwork TEXT NOT NULL DEFAULT 'waves',
+                        cardStyle TEXT NOT NULL DEFAULT 'illustrated',
+                        textColor TEXT NOT NULL DEFAULT '#FFFFFF',
+                        cardIcon TEXT NOT NULL DEFAULT 'none',
+                        lastUpdated INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    INSERT OR IGNORE INTO wallet_customizations (
+                        walletId, cardTheme, primaryColor, secondaryColor, accentColor, artwork, cardStyle, textColor, cardIcon, lastUpdated
+                    )
+                    SELECT id, cardTheme, primaryColor, secondaryColor, accentColor, artwork, cardStyle, textColor, cardIcon, ${System.currentTimeMillis()}
+                    FROM wallets
+                    """.trimIndent()
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -87,7 +119,14 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expencetrack.db"
                 )
-                .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10
+                )
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

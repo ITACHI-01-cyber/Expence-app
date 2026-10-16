@@ -7,10 +7,12 @@ import com.example.model.CardDisplayBalanceEntity
 import com.example.model.SavingsGoalEntity
 import com.example.model.TransactionEntity
 import com.example.model.UserSettingsEntity
+import com.example.model.WalletCustomizationEntity
 import com.example.model.WalletEntity
 import com.example.network.ApiActionResponse
 import com.example.network.ApiResponse
 import com.example.network.BackendApiService
+import com.example.network.CardCustomizationRequest
 import com.example.network.CreditActivityItem
 import com.example.network.CreditRepaymentRequest
 import com.example.network.CreditRepaymentResponse
@@ -26,6 +28,8 @@ import com.example.network.ServerWallet
 import com.example.network.UserSettingsRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -37,6 +41,9 @@ class ExpenseRepository(
     private val dao: AppDao,
     private val apiService: BackendApiService = NetworkClient.apiService
 ) {
+    // Serializes per-process design saves so a slow older PATCH cannot apply
+    // after a newer selection and restore stale card artwork/colors.
+    private val walletCustomizationMutex = Mutex()
     val wallets: Flow<List<WalletEntity>> = dao.getAllWallets()
     val cardDisplayBalances: Flow<List<CardDisplayBalanceEntity>> = dao.getCardDisplayBalances()
     val transactions: Flow<List<TransactionEntity>> = dao.getAllTransactions()
@@ -94,12 +101,76 @@ class ExpenseRepository(
         try {
             val response = apiService.getWallets()
             val items = response.requireData("wallets")
-            val parsed = items.map { it.toEntity() }
+            val localCustomizations = dao.getAllWalletCustomizationsList().associateBy { it.walletId }
+            val existingWallets = dao.getAllWalletsList().associateBy { it.id }
+
+            val parsed = items.map { serverWallet ->
+                val walletId = serverWallet.mongoId ?: serverWallet.id
+                    ?: throw IllegalStateException("Wallet response did not include an id")
+                serverWallet.toEntity(
+                    localCustomization = localCustomizations[walletId],
+                    existingWallet = existingWallets[walletId]
+                )
+            }
             dao.clearWallets()
             if (parsed.isNotEmpty()) dao.insertWallets(parsed)
+            // A GET response is authoritative only for fields it actually
+            // contains. Persist the resolved value so an omitted optional
+            // server property cannot reset a valid local design on restart.
+            dao.insertWalletCustomizations(parsed.map { it.toCustomization() })
             Result.success(parsed)
         } catch (error: Exception) {
-            Result.failure(error)
+            val parsedError = if (error is IllegalStateException) error else apiError("wallets", 0, error.localizedMessage, error)
+            Result.failure(parsedError)
+        }
+    }
+
+    suspend fun updateCardCustomization(
+        walletId: String,
+        theme: String,
+        primaryColor: String,
+        secondaryColor: String,
+        accentColor: String,
+        artwork: String,
+        cardStyle: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        walletCustomizationMutex.withLock {
+            val currentWallet = dao.getWalletById(walletId)
+            try {
+                requireNotNull(currentWallet) { "The selected card is no longer available." }
+                // Do not update Room before the server confirms the PATCH. This
+                // prevents a failed or stale request from appearing as saved.
+                val response = apiService.updateWalletCustomization(
+                    walletId,
+                    CardCustomizationRequest(
+                        designPreset = theme,
+                        primaryColor = primaryColor,
+                        secondaryColor = secondaryColor,
+                        textColor = currentWallet.textColor,
+                        accentColor = accentColor,
+                        artwork = artwork,
+                        cardStyle = cardStyle
+                    )
+                )
+                val confirmed = response.requireData("wallet customization update")
+                val requested = currentWallet.copy(
+                    designId = theme,
+                    cardTheme = theme,
+                    primaryColor = primaryColor,
+                    secondaryColor = secondaryColor,
+                    accentColor = accentColor,
+                    artwork = artwork,
+                    cardStyle = cardStyle
+                ).toCustomization()
+                // If an older deployment omits a customization property in its
+                // response, retain the just-confirmed value for that property.
+                val merged = currentWallet.mergeCustomizationResponse(confirmed, requested)
+                dao.insertWallet(merged)
+                dao.insertWalletCustomization(merged.toCustomization())
+                Result.success(Unit)
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
         }
     }
 
@@ -138,20 +209,83 @@ class ExpenseRepository(
     }
 
     suspend fun addWallet(wallet: WalletEntity) = withContext(Dispatchers.IO) {
-        dao.insertWallet(apiService.addWallet(wallet.toServer()).requireData("wallet creation").toEntity())
+        val customization = WalletCustomizationEntity(
+            walletId = wallet.id,
+            cardTheme = wallet.cardTheme,
+            primaryColor = wallet.primaryColor,
+            secondaryColor = wallet.secondaryColor,
+            accentColor = wallet.accentColor,
+            artwork = wallet.artwork,
+            cardStyle = wallet.cardStyle,
+            textColor = wallet.textColor,
+            cardIcon = wallet.cardIcon
+        )
+        dao.insertWalletCustomization(customization)
+        dao.insertWallet(wallet)
+
+        try {
+            val serverWallet = apiService.addWallet(wallet.toServer()).requireData("wallet creation").toEntity()
+            val merged = serverWallet.copy(
+                cardTheme = wallet.cardTheme,
+                designId = wallet.designId,
+                primaryColor = wallet.primaryColor,
+                secondaryColor = wallet.secondaryColor,
+                accentColor = wallet.accentColor,
+                artwork = wallet.artwork,
+                cardStyle = wallet.cardStyle
+            )
+            if (serverWallet.id != wallet.id) {
+                dao.deleteWalletById(wallet.id)
+                dao.deleteWalletCustomization(wallet.id)
+                dao.insertWalletCustomization(customization.copy(walletId = serverWallet.id))
+                dao.insertWallet(merged.copy(id = serverWallet.id))
+            } else {
+                dao.insertWallet(merged)
+            }
+        } catch (_: Exception) {
+            // Retain local wallet if server is unavailable
+        }
     }
 
     suspend fun updateWallet(wallet: WalletEntity) = withContext(Dispatchers.IO) {
-        dao.insertWallet(
-            apiService.updateWallet(wallet.id, wallet.toServer(includeId = true))
+        val cust = dao.getWalletCustomization(wallet.id)
+        val customization = WalletCustomizationEntity(
+            walletId = wallet.id,
+            cardTheme = wallet.cardTheme.ifBlank { cust?.cardTheme ?: "midnight" },
+            primaryColor = wallet.primaryColor.ifBlank { cust?.primaryColor ?: "#1A1A2E" },
+            secondaryColor = wallet.secondaryColor.ifBlank { cust?.secondaryColor ?: "#16213E" },
+            accentColor = wallet.accentColor.ifBlank { cust?.accentColor ?: "#38BDF8" },
+            artwork = wallet.artwork.ifBlank { cust?.artwork ?: "waves" },
+            cardStyle = wallet.cardStyle.ifBlank { cust?.cardStyle ?: "illustrated" }
+        )
+        dao.insertWalletCustomization(customization)
+        dao.insertWallet(wallet)
+
+        try {
+            val serverWallet = apiService.updateWallet(wallet.id, wallet.toServer(includeId = true))
                 .requireData("wallet update")
                 .toEntity()
-        )
+            val merged = serverWallet.copy(
+                cardTheme = customization.cardTheme,
+                designId = customization.cardTheme,
+                primaryColor = customization.primaryColor,
+                secondaryColor = customization.secondaryColor,
+                accentColor = customization.accentColor,
+                artwork = customization.artwork,
+                cardStyle = customization.cardStyle
+            )
+            dao.insertWallet(merged)
+        } catch (_: Exception) {
+            // Retain local update if server call failed
+        }
     }
 
     suspend fun deleteWallet(walletId: String) = withContext(Dispatchers.IO) {
-        apiService.deleteWallet(walletId).requireSuccess("wallet deletion")
+        try {
+            apiService.deleteWallet(walletId).requireSuccess("wallet deletion")
+        } catch (_: Exception) { }
         dao.deleteWalletById(walletId)
+        dao.deleteWalletCustomization(walletId)
         dao.deleteCardDisplayBalance(walletId)
     }
 
@@ -322,6 +456,7 @@ class ExpenseRepository(
 
     suspend fun clearAllUserData() = withContext(Dispatchers.IO) {
         dao.clearWallets()
+        dao.clearWalletCustomizations()
         dao.clearCardDisplayBalances()
         dao.clearTransactions()
         dao.clearGoals()
@@ -395,37 +530,73 @@ class ExpenseRepository(
         backContactInfo = backContactInfo
     )
 
-    private fun ServerWallet.toEntity(): WalletEntity {
+    private fun WalletEntity.toCustomization() = WalletCustomizationEntity(
+        walletId = id,
+        cardTheme = cardTheme.ifBlank { designId },
+        primaryColor = primaryColor,
+        secondaryColor = secondaryColor,
+        accentColor = accentColor,
+        artwork = artwork,
+        cardStyle = cardStyle,
+        textColor = textColor,
+        cardIcon = cardIcon,
+        lastUpdated = System.currentTimeMillis()
+    )
+
+    /**
+     * The customization PATCH may return a compact wallet projection. Keep
+     * financial/ownership fields from the known wallet and accept only the
+     * customization fields that the response actually includes.
+     */
+    private fun WalletEntity.mergeCustomizationResponse(
+        response: ServerWallet,
+        requested: WalletCustomizationEntity
+    ) = copy(
+        designId = response.designPreset?.takeIf(String::isNotBlank) ?: requested.cardTheme,
+        cardTheme = response.designPreset?.takeIf(String::isNotBlank) ?: requested.cardTheme,
+        primaryColor = response.primaryColor?.takeIf(String::isNotBlank) ?: requested.primaryColor,
+        secondaryColor = response.secondaryColor?.takeIf(String::isNotBlank) ?: requested.secondaryColor,
+        textColor = response.textColor?.takeIf(String::isNotBlank) ?: requested.textColor,
+        accentColor = response.accentColor?.takeIf(String::isNotBlank) ?: requested.accentColor,
+        artwork = response.artwork?.takeIf(String::isNotBlank) ?: requested.artwork,
+        cardStyle = response.cardStyle?.takeIf(String::isNotBlank) ?: requested.cardStyle
+    )
+
+    private fun ServerWallet.toEntity(
+        localCustomization: WalletCustomizationEntity? = null,
+        existingWallet: WalletEntity? = null
+    ): WalletEntity {
         val walletId = mongoId ?: id
             ?: throw IllegalStateException("Wallet response did not include an id")
+        val resolvedBalance = balance ?: existingWallet?.balance ?: 0.0
         return WalletEntity(
             id = walletId,
-            bankName = bankName,
-            cardType = cardType,
-            cardBrand = cardBrand.orEmpty(),
-            cardName = cardName.orEmpty(),
-            cardNumber = cardNumber,
-            cardHolderName = cardHolderName,
-            expiryDate = expiryDate.orEmpty(),
-            balance = balance,
-            creditLimit = creditLimit,
-            outstandingBalance = outstandingBalance,
-            statementClosingDay = statementClosingDay,
-            paymentDueDay = paymentDueDay,
-            minimumPaymentAmount = minimumPaymentAmount,
-            creditTermsConfigured = creditTermsConfigured,
-            timezone = timezone ?: "UTC",
-            primaryColor = primaryColor ?: "#1A1A2E",
-            secondaryColor = secondaryColor ?: "#16213E",
-            designId = designPreset.orEmpty(),
-            cardTheme = designPreset.orEmpty(),
-            accentColor = accentColor?.takeIf(String::isNotBlank) ?: "#38BDF8",
-            artwork = artwork?.takeIf(String::isNotBlank) ?: "waves",
-            cardStyle = cardStyle?.takeIf(String::isNotBlank) ?: "illustrated",
-            textColor = textColor ?: "#FFFFFF",
-            cardIcon = cardIcon ?: "none",
-            backSignatureText = backSignatureText ?: "Not Valid without Authorized Signature",
-            backContactInfo = backContactInfo ?: "support@bank.com | 1-800-555-0199"
+            bankName = bankName.ifBlank { existingWallet?.bankName ?: "Bank" },
+            cardType = cardType.ifBlank { existingWallet?.cardType ?: "debit" },
+            cardBrand = cardBrand.orEmpty().ifBlank { existingWallet?.cardBrand.orEmpty() },
+            cardName = cardName.orEmpty().ifBlank { existingWallet?.cardName.orEmpty() },
+            cardNumber = cardNumber.ifBlank { existingWallet?.cardNumber.orEmpty() },
+            cardHolderName = cardHolderName.ifBlank { existingWallet?.cardHolderName.orEmpty() },
+            expiryDate = expiryDate.orEmpty().ifBlank { existingWallet?.expiryDate.orEmpty() },
+            balance = resolvedBalance,
+            creditLimit = creditLimit ?: existingWallet?.creditLimit,
+            outstandingBalance = outstandingBalance ?: existingWallet?.outstandingBalance,
+            statementClosingDay = statementClosingDay ?: existingWallet?.statementClosingDay,
+            paymentDueDay = paymentDueDay ?: existingWallet?.paymentDueDay,
+            minimumPaymentAmount = minimumPaymentAmount ?: existingWallet?.minimumPaymentAmount,
+            creditTermsConfigured = creditTermsConfigured || (existingWallet?.creditTermsConfigured == true),
+            timezone = timezone ?: existingWallet?.timezone ?: "UTC",
+            primaryColor = primaryColor?.takeIf(String::isNotBlank) ?: localCustomization?.primaryColor ?: existingWallet?.primaryColor ?: "#1A1A2E",
+            secondaryColor = secondaryColor?.takeIf(String::isNotBlank) ?: localCustomization?.secondaryColor ?: existingWallet?.secondaryColor ?: "#16213E",
+            designId = designPreset?.takeIf(String::isNotBlank) ?: localCustomization?.cardTheme ?: existingWallet?.designId ?: "midnight",
+            cardTheme = designPreset?.takeIf(String::isNotBlank) ?: localCustomization?.cardTheme ?: existingWallet?.cardTheme ?: "midnight",
+            accentColor = accentColor?.takeIf(String::isNotBlank) ?: localCustomization?.accentColor ?: existingWallet?.accentColor ?: "#38BDF8",
+            artwork = artwork?.takeIf(String::isNotBlank) ?: localCustomization?.artwork ?: existingWallet?.artwork ?: "waves",
+            cardStyle = cardStyle?.takeIf(String::isNotBlank) ?: localCustomization?.cardStyle ?: existingWallet?.cardStyle ?: "illustrated",
+            textColor = textColor?.takeIf(String::isNotBlank) ?: localCustomization?.textColor ?: existingWallet?.textColor ?: "#FFFFFF",
+            cardIcon = cardIcon?.takeIf(String::isNotBlank) ?: localCustomization?.cardIcon ?: existingWallet?.cardIcon ?: "none",
+            backSignatureText = backSignatureText ?: existingWallet?.backSignatureText ?: "Not Valid without Authorized Signature",
+            backContactInfo = backContactInfo ?: existingWallet?.backContactInfo ?: "support@bank.com | 1-800-555-0199"
         )
     }
 
@@ -488,15 +659,21 @@ class ExpenseRepository(
     private fun parseTimestamp(value: String?): Long? =
         com.example.analytics.parseDateStringToMillis(value)
 
-    private fun apiError(resource: String, code: Int, message: String?): IllegalStateException {
-        val detail = message?.takeIf(String::isNotBlank) ?: when (code) {
-            0 -> "No internet connection or the backend is unavailable."
-            400 -> "The server rejected the $resource request."
-            401 -> "Your session has expired. Please sign in again."
-            403 -> "You do not have permission to access this $resource."
-            404 -> "The requested $resource was not found."
-            in 500..599 -> "The backend is temporarily unavailable. Please try again."
-            else -> "The $resource request failed (HTTP $code)."
+    private fun apiError(resource: String, code: Int, message: String?, error: Throwable? = null): IllegalStateException {
+        val detail = when {
+            error is com.squareup.moshi.JsonDataException || error is com.squareup.moshi.JsonEncodingException || error is IllegalArgumentException ->
+                "Failed to parse $resource response: ${error.localizedMessage}"
+            error is java.io.IOException ->
+                "Network connectivity failure while syncing $resource: ${error.localizedMessage}"
+            else -> message?.takeIf(String::isNotBlank) ?: when (code) {
+                0 -> "No internet connection or the backend is unavailable."
+                400 -> "The server rejected the $resource request."
+                401 -> "Your session has expired. Please sign in again."
+                403 -> "You do not have permission to access this $resource."
+                404 -> "The requested $resource was not found."
+                in 500..599 -> "The backend is temporarily unavailable. Please try again."
+                else -> "The $resource request failed (HTTP $code)."
+            }
         }
         return IllegalStateException(detail)
     }

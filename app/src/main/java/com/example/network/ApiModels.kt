@@ -147,7 +147,7 @@ data class ServerWallet(
     @Json(name = "cardName") val cardName: String? = null,
     @Json(name = "expiryDate") val expiryDate: String? = null,
     @Json(name = "cardHolderName") val cardHolderName: String = "",
-    @Json(name = "balance") val balance: Double = 0.0,
+    @Json(name = "balance") val balance: Double? = null,
     @Json(name = "bankName") val bankName: String = "Bank",
     @Json(name = "creditLimit") val creditLimit: Double? = null,
     @Json(name = "outstandingBalance") val outstandingBalance: Double? = null,
@@ -235,12 +235,16 @@ data class CreditActivityItem(
 
 @JsonClass(generateAdapter = true)
 data class CardCustomizationRequest(
-    @Json(name = "cardTheme") val cardTheme: String,
-    @Json(name = "primaryColor") val primaryColor: String,
-    @Json(name = "secondaryColor") val secondaryColor: String,
-    @Json(name = "accentColor") val accentColor: String,
-    @Json(name = "artwork") val artwork: String,
-    @Json(name = "cardStyle") val cardStyle: String
+    // These names deliberately match the backend PATCH contract.  Do not use
+    // cardTheme here: it is an Android legacy name, while the API owns
+    // designPreset.
+    @Json(name = "designPreset") val designPreset: String? = null,
+    @Json(name = "primaryColor") val primaryColor: String? = null,
+    @Json(name = "secondaryColor") val secondaryColor: String? = null,
+    @Json(name = "textColor") val textColor: String? = null,
+    @Json(name = "accentColor") val accentColor: String? = null,
+    @Json(name = "artwork") val artwork: String? = null,
+    @Json(name = "cardStyle") val cardStyle: String? = null
 )
 
 @JsonClass(generateAdapter = true)

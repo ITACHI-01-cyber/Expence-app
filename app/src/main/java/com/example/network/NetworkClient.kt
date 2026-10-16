@@ -92,6 +92,12 @@ interface BackendApiService {
         @Body wallet: ServerWallet
     ): Response<ApiResponse<ServerWallet>>
 
+    @PATCH("wallet/{id}/customization")
+    suspend fun updateWalletCustomization(
+        @Path("id") id: String,
+        @Body customization: CardCustomizationRequest
+    ): Response<ApiResponse<ServerWallet>>
+
     @PATCH("wallet/{id}/add-money")
     suspend fun addMoneyToWallet(
         @Path("id") id: String,
